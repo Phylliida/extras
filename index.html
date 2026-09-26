@@ -100,7 +100,7 @@
 <body>
   <div class="wb-bar">
     <h1>✨ Extras</h1>
-    <a class="wb-home" id="wbHome" href="/">← Home</a>
+    <a class="wb-home" id="wbHome" href="/extras/">← Extras</a>
     <button id="extrasBtn" type="button">✨ Extras</button>
   </div>
   <div class="wb-hint">
@@ -137,19 +137,8 @@
     window.addEventListener('resize', syncTop);
     syncTop();
 
-    // The "← Home" link defaults to the host's root (so it works on any
-    // host, including a local server), but if we arrived here from
-    // another page on a phylliida host or this same origin, go back there
-    // instead — e.g. the homepage section the tool was opened from.
-    var home = document.getElementById('wbHome');
-    if (home && document.referrer) {
-      try {
-        var ref = new URL(document.referrer);
-        if (ref.origin === location.origin || /(^|\.)phylliida\.dev$/.test(ref.hostname)) {
-          home.href = document.referrer;
-        }
-      } catch (e) { /* keep default href */ }
-    }
+    // The "← Extras" link always returns to the extras main page (/extras/),
+    // dropping any #tool hash, rather than leaving for the site homepage.
 
     function openGrid() {
       var btn = document.getElementById('extrasBtn');
