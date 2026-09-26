@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Extras — phylliida.dev</title>
+<link rel="icon" href="icon.png">
+<!--
+  Extras — standalone home of the Extras mini-apps from
+  self-hosted-creature-collect (anki flashcards, draw, synth, fractals,
+  todos, …), served at https://www.phylliida.dev/extras/.
+
+  All state lives in this browser (localStorage / IndexedDB under cc.*
+  keys and the extras stores) — there is no server savefile here, so the
+  LAN workbench's Load / Save bar is gone. Everything else is the same
+  extras scripts the app uses.
+
+  Hash routing: /extras/#<tool-id> (e.g. #sudoku, #tuner, #pixelart)
+  opens that tool directly, so tools are linkable from elsewhere.
+
+  The extras scripts inject their own CSS but rely on the host page for
+  the theme variables, the .sheet background rule, and the .cc-x-btn
+  close-button rule (mirrored from the app's index.html defaults, plus a
+  dark variant since this page has no theme system).
+-->
+<style>
+  :root {
+    --ui-bg:            #ffffff;
+    --ui-text:          #333;
+    --ui-muted:         #888;
+    --ui-border:        transparent;
+    --ui-hairline:      #eee;
+    --ui-hover:         #f5f5f5;
+    --ui-input-bg:      #ffffff;
+    --ui-radius:        8px;
+    --ui-shadow:        0 2px 8px rgba(0, 0, 0, 0.2);
+    --ui-accent:        #3b7fdf;
+    --ui-accent-text:   #ffffff;
+    --ui-accent-border: #3070c8;
+    --ui-danger:        #c44;
+    --wb-page-bg:       #eef0f4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ui-bg:            #23262f;
+      --ui-text:          #e6e7ea;
+      --ui-muted:         #9aa0ab;
+      --ui-border:        rgba(255, 255, 255, 0.08);
+      --ui-hairline:      rgba(255, 255, 255, 0.09);
+      --ui-hover:         rgba(255, 255, 255, 0.07);
+      --ui-input-bg:      #1b1d24;
+      --ui-shadow:        0 2px 10px rgba(0, 0, 0, 0.55);
+      --wb-page-bg:       #14161c;
+    }
+  }
+  html, body { margin: 0; padding: 0; background: var(--wb-page-bg); color: var(--ui-text);
+    font-family: system-ui, -apple-system, sans-serif; min-height: 100%; }
+
+  /* Host-page rules the extras suite expects (from the app's index.html). */
+  #extrasPanel .sheet {
+    background: var(--ui-bg); color: var(--ui-text);
+    border: 1px solid var(--ui-border); box-shadow: var(--ui-shadow);
+    border-radius: var(--ui-radius);
+  }
+  button.close.cc-x-btn {
+    background: transparent !important; border: none !important;
+    color: var(--ui-text) !important; box-shadow: none !important;
+    font-size: 26px; line-height: 1; cursor: pointer; padding: 4px 8px;
+  }
+  /* Roomier sheet on desktop — the grid just flows more bubbles per row. */
+  @media (min-width: 700px) {
+    #extrasPanel .sheet { max-width: 620px !important; }
+  }
+
+  /* Top bar — permanently visible: it's fixed above EVERYTHING (the
+     extras sheet at z-31, the fractals/anki windows at z-60, the
+     synth/draw/pixel .exapp-win windows at z-1200), and every one of
+     those fullscreen overlays is pushed down below it via --wb-top.
+     --wb-top tracks the bar's real height (it wraps on narrow screens)
+     from a ResizeObserver in the boot script below. */
+  :root { --wb-top: 56px; }
+  .wb-bar {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    padding: max(10px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right))
+             10px max(14px, env(safe-area-inset-left));
+    background: var(--ui-bg); border-bottom: 1px solid var(--ui-hairline);
+    position: fixed; top: 0; left: 0; right: 0; z-index: 1300;
+  }
+  .wb-bar h1 { font-size: 17px; margin: 0; font-weight: 700; }
+  .wb-bar a.wb-home { color: var(--ui-muted); text-decoration: none; font-size: 13.5px; }
+  .wb-bar a.wb-home:hover { color: var(--ui-accent); }
+  /* extras.js styles #extrasBtn as a full-width Settings row button;
+     this page auto-opens the grid, so the button is only a script hook. */
+  #extrasBtn { display: none !important; }
+
+  .wb-hint { max-width: 640px; margin: 76px auto 18px; padding: 0 16px;
+    font-size: 13px; color: var(--ui-muted); line-height: 1.5; }
+</style>
+</head>
+<body>
+  <div class="wb-bar">
+    <h1>✨ Extras</h1>
+    <a class="wb-home" href="https://www.phylliida.dev/">← phylliida.dev</a>
+    <button id="extrasBtn" type="button">✨ Extras</button>
+  </div>
+  <div class="wb-hint">
+    Little tools and toys, lifted out of
+    <a href="https://github.com/Phylliida/self-hosted-creature-collect">self-hosted-creature-collect</a>
+    so they work in any browser. Everything you make here (flashcards, drawings,
+    songs, todos, …) stays in this browser's local storage. Tip: each tool has
+    its own link — <code>#sudoku</code>, <code>#tuner</code>, <code>#pixelart</code>, …
+  </div>
+
+  <script src="extras.js"></script>
+  <script src="extras-apps.js"></script>
+  <script src="extras-almanac.js"></script>
+  <script src="extras-vibration.js"></script>
+  <script src="extras-skymap.js"></script>
+  <script src="extras-sudoku.js"></script>
+  <script src="extras-sensors.js"></script>
+  <script src="extras-tuner.js"></script>
+  <script src="extras-scapes.js"></script>
+  <script src="extras-todos.js"></script>
+  <script src="extras-anki.js"></script>
+  <script>
+  (function () {
+    'use strict';
+
+    // Keep --wb-top matched to the bar's real height so the fullscreen
+    // tool overlays (top: var(--wb-top)) always start right below it.
+    function syncTop() {
+      var bar = document.querySelector('.wb-bar');
+      if (bar) document.documentElement.style.setProperty('--wb-top', bar.offsetHeight + 'px');
+    }
+    if (typeof ResizeObserver === 'function') {
+      var bar = document.querySelector('.wb-bar');
+      if (bar) new ResizeObserver(syncTop).observe(bar);
+    }
+    window.addEventListener('resize', syncTop);
+    syncTop();
+
+    function openGrid() {
+      var btn = document.getElementById('extrasBtn');
+      if (btn && btn.onclick) btn.onclick();
+    }
+
+    function hashId() {
+      return decodeURIComponent(location.hash.replace(/^#\/?/, ''));
+    }
+
+    // Open the tool for the current hash, if any. Bubbles are real
+    // buttons, so a synthetic click runs the launcher's own wiring —
+    // including games-folder bubbles (their delegated handler calls
+    // showTool directly, even while the folder view is hidden).
+    function route() {
+      openGrid();
+      var id = hashId();
+      if (!id) return;
+      var b = document.querySelector('.extras-bubble[data-extra="' + id.replace(/"/g, '') + '"]');
+      if (b) b.click();
+    }
+
+    // Reflect tool opens into the hash so tools are linkable.
+    document.addEventListener('click', (e) => {
+      var b = e.target.closest && e.target.closest('.extras-bubble');
+      if (b && b.dataset.extra && hashId() !== b.dataset.extra) {
+        history.replaceState(null, '', '#' + b.dataset.extra);
+      }
+    });
+    // Closing the sheet (X, backdrop, or its own back-to-grid) drops the hash.
+    var panelObserver = new MutationObserver(() => {
+      var panel = document.getElementById('extrasPanel');
+      if (panel && !panel.classList.contains('show') && location.hash) {
+        history.replaceState(null, '', location.pathname);
+      }
+    });
+    function watchPanel() {
+      var panel = document.getElementById('extrasPanel');
+      if (panel) panelObserver.observe(panel, { attributes: true, attributeFilter: ['class'] });
+    }
+
+    function boot() {
+      watchPanel();
+      route();
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', boot);
+    } else {
+      boot();
+    }
+    window.addEventListener('hashchange', route);
+  })();
+  </script>
+</body>
+</html>

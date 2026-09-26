@@ -1,0 +1,1999 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Isomorphic Sound Canvas – 3 Rows of Percussion</title>
+
+<style>
+/* ------------ GLOBAL LAYOUT ------------ */
+html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:Arial,Helvetica,sans-serif;
+user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+#soundPad{width:100%;height:100%;background:linear-gradient(135deg,#1e3c72,#2a5298);touch-action:none;position:relative}
+
+/* ----- percussion guide overlay ----- */
+#drumGrid{position:absolute;inset:0;pointer-events:none;display:none}
+.drum-v{position:absolute;top:0;bottom:0;width:2px;background:rgba(255,255,255,.35)}
+.drum-h{position:absolute;left:0;right:0;height:2px;background:rgba(255,255,255,.35)}
+
+/* ------------ NOTE MARKERS ------------ */
+.note-marker,.playback-marker{position:absolute;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;
+display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:bold}
+.note-marker{box-shadow:0 0 15px rgba(255,255,255,.6);color:#fff}
+.playback-marker{box-shadow:0 0 7px rgba(255,255,0,.8);border:2px solid rgba(255,255,0,.8);
+background:rgba(255,255,0,.25);color:#ffc}
+
+/* ------------ BOTTOM STACK (dots / scrubber / controls) ------------ */
+#bottomStack{position:fixed;bottom:0;left:0;right:0;z-index:100;display:flex;flex-direction:column}
+#scrubRow{display:flex;background:rgba(0,0,0,.5);padding:0 8px}
+#scrubSlider{width:100%;height:18px;margin:0}
+
+/* ------------ COMPACT CONTROL STRIP ------------ */
+#controls{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;
+padding:4px 6px;background:rgba(0,0,0,.55);backdrop-filter:blur(5px);font-size:12px}
+.control-group{display:flex;align-items:center;background:rgba(0,0,0,.2);padding:3px 6px;border-radius:4px;gap:6px}
+button{padding:5px 9px;background:rgba(255,255,255,.18);border:none;border-radius:4px;color:#fff;font-weight:600;cursor:pointer;
+transition:.2s;font-size:12px}
+button:hover{background:rgba(255,255,255,.28)}
+button.active{background:rgba(255,100,100,.55)}
+label,.control-value{color:#fff}
+input[type=range]{width:80px;height:6px}
+
+/* ------------ PANELS / METRONOME ------------ */
+#recordingsToggle{position:fixed;top:10px;right:10px;z-index:101;padding:4px 9px;background:rgba(0,0,0,.5);
+color:#fff;border-radius:4px;cursor:pointer;display:flex;align-items:center;gap:4px;font-size:13px}
+#recordingsPanel{position:fixed;top:42px;right:10px;width:180px;max-height:40vh;background:rgba(0,0,0,.78);
+backdrop-filter:blur(5px);z-index:100;padding:8px;border-radius:4px;overflow-y:auto;display:none;flex-direction:column;gap:5px}
+#recordingsPanel.visible{display:flex}
+.recording-item{display:flex;align-items:center;flex-wrap:wrap;padding:5px;background:rgba(255,255,255,.1);border-radius:4px;transition:.2s}
+.rec-vol{flex-basis:100%;width:100%;height:4px;margin:5px 0 1px}
+.recording-item.active{background:rgba(255,100,100,.28)}
+.recording-name{flex-grow:1;color:#fff;margin-right:4px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.recording-controls{display:flex;gap:3px}
+.recording-controls button{padding:2px 5px;font-size:10px;min-width:20px}
+#recordingBadge{position:fixed;top:14px;right:60px;background:rgba(255,0,0,.55);color:#fff;border-radius:10px;font-size:11px;
+padding:1px 6px;display:none;z-index:101}
+.recording-badge.visible{display:block}
+#metronomeLight{width:12px;height:12px;border-radius:50%;background:#333;transition:.1s}
+#metronomeLight.active{background:#ff5;box-shadow:0 0 9px #ff5}
+#barCounter{color:#fff;min-width:34px;text-align:center}
+.beat-indicator{background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;gap:4px;padding:5px 6px}
+.beat-marker{flex:0 1 14px;min-width:5px;aspect-ratio:1;height:auto;background:rgba(255,255,255,.2);border-radius:50%;transition:.05s}
+.beat-marker.accent{flex-basis:18px;background:rgba(255,255,255,.28)}
+.beat-marker.active{background:rgba(255,255,0,.85);box-shadow:0 0 9px rgba(255,255,0,.55)}
+
+/* ----- quantize: scale pitch-line overlay + hex keyboard ----- */
+#scaleGrid,#scaleLabels,#hexGrid{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:none}
+.scale-label{position:absolute;transform:translate(-50%,-50%);font-size:9px;font-weight:bold;pointer-events:none;
+text-shadow:0 0 3px rgba(0,0,0,.9)}
+select{padding:4px 5px;background:rgba(255,255,255,.18);border:none;border-radius:4px;color:#fff;font-size:12px}
+select option{color:#000}
+
+/* ----- synth options popover (low note / hex key size) ----- */
+#synthCfgPanel{position:fixed;right:10px;bottom:120px;z-index:101;background:rgba(0,0,0,.78);
+backdrop-filter:blur(5px);padding:10px 12px;border-radius:8px;display:flex;flex-direction:column;gap:8px;
+font-size:12px;color:#fff;min-width:170px}
+#synthCfgPanel[hidden]{display:none}
+#synthCfgPanel label{display:flex;justify-content:space-between;gap:10px;align-items:center;color:#fff}
+
+/* ----- ⚗ voice lab: docked top sheet ("tab") — keys below stay playable ----- */
+#labToggle{position:fixed;top:10px;left:10px;z-index:105;padding:4px 9px;background:rgba(0,0,0,.5);
+color:#fff;border-radius:4px;cursor:pointer;font-size:13px}
+#voiceLabPanel{position:fixed;top:0;left:0;right:0;max-height:calc(100% - 6px);z-index:104;overflow:hidden;
+background:rgba(8,12,24,.93);backdrop-filter:blur(6px);padding:10px 14px 12px;
+border-radius:0 0 14px 14px;display:flex;gap:10px;font-size:12px;color:#fff}
+#voiceLabPanel[hidden]{display:none}
+#vlMain{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;gap:7px;overflow-y:auto}
+#vlPadCol{display:flex;flex-direction:column;gap:6px;flex-shrink:0;width:54px}
+#vlPadCol select{width:54px;padding:4px 2px;text-align:center}
+#vlPad{flex:1;min-height:120px;border-radius:10px;position:relative;cursor:pointer;
+background:linear-gradient(180deg,#2a5298,#1e3c72);touch-action:none;box-shadow:inset 0 0 10px rgba(0,0,0,.35)}
+#vlPadNote{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none;
+color:rgba(255,255,255,.85);font-size:11px;font-weight:600;text-shadow:0 0 4px #000;white-space:nowrap}
+#voiceLabPanel label{display:flex;justify-content:space-between;gap:8px;align-items:center;color:#fff}
+#voiceLabPanel input[type=range]{width:46%;max-width:220px}
+#voiceLabPanel .vl-v{min-width:44px;text-align:right;color:rgba(255,255,255,.7);font-variant-numeric:tabular-nums}
+#voiceLabPanel .vl-title{text-align:center;font-weight:700;margin-bottom:2px;position:relative}
+#voiceLabPanel .vl-h{font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+color:rgba(160,190,255,.75);margin:3px 0 -2px}
+#vlClose{position:absolute;right:0;top:-3px;padding:2px 9px}
+#vlMatch.on{background:rgba(120,180,255,.4)}
+#vlSpec{width:100%;height:104px;border-radius:6px;background:rgba(255,255,255,.05);flex-shrink:0}
+.vl-librow{display:flex;gap:6px;margin-top:2px}
+#vlName{flex:1;min-width:0;padding:5px 8px;border:none;border-radius:4px;background:rgba(255,255,255,.14);
+color:#fff;font-size:12px}
+#vlList,#vlPresets{display:flex;flex-wrap:wrap;gap:5px}
+.vl-preset{border-radius:999px;padding:4px 11px;background:rgba(255,255,255,.09)}
+.vl-vrow{display:flex;align-items:center;background:rgba(255,255,255,.09);border-radius:999px;overflow:hidden}
+.vl-pick{border-radius:999px 0 0 999px;padding:4px 4px 4px 11px}
+.vl-pick.on{background:rgba(120,180,255,.4)}
+.vl-del{padding:4px 9px 4px 5px;background:transparent}
+
+/* ----- 🌐 tuning explorer (Scala archive browser) ----- */
+#tunExplorer{position:fixed;inset:0;z-index:200;background:#070b18;
+display:flex;flex-direction:column;color:#fff;font-size:12px;padding:10px 10px 4px}
+#tunExplorer[hidden]{display:none}
+.tx-head{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-shrink:0}
+.tx-title{font-weight:700;font-size:14px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#txCount{color:rgba(160,190,255,.8);font-weight:400;font-size:11px;margin-left:7px}
+#txHisto{display:flex;align-items:flex-end;gap:2px;overflow-x:auto;overflow-y:hidden;
+padding:2px 2px 0;flex-shrink:0;scrollbar-width:none}
+.tx-bar{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:2px;
+padding:2px 3px 3px;background:transparent;border-radius:6px;min-width:22px;flex-shrink:0}
+.tx-bar i{display:block;width:15px;border-radius:3px 3px 1px 1px;min-height:3px}
+.tx-bar b{font-size:9px;font-weight:600;color:rgba(255,255,255,.75);line-height:1}
+.tx-bar u{font-size:8px;text-decoration:none;color:rgba(255,255,255,.38);line-height:1}
+.tx-bar.on{background:rgba(120,180,255,.26)}
+.tx-bar.on b{color:#fff}
+#txChipRow{display:flex;gap:5px;flex-wrap:wrap;margin:6px 0;flex-shrink:0;align-items:center}
+#txChips{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
+.tx-sel{font-size:11px;padding:3px 6px;border-radius:999px;background:rgba(255,255,255,.1);max-width:44vw}
+#txDetRuler{border-radius:6px;background:rgba(255,255,255,.05)}
+#txSearch{flex:1;min-width:90px;padding:4px 9px;border:none;border-radius:999px;
+background:rgba(255,255,255,.1);color:#fff;font-size:11px}
+#txGrid{flex:1;min-height:0;overflow-y:auto;position:relative;border-radius:8px;background:rgba(255,255,255,.03)}
+#txPad{position:relative;width:100%}
+.tx-cell{position:absolute;display:flex;flex-direction:column;align-items:center;gap:1px;
+cursor:pointer;padding-top:6px;border-radius:8px}
+.tx-cell:active{background:rgba(120,180,255,.15)}
+.tx-name{font-size:9px;color:rgba(255,255,255,.72);max-width:94%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#txStatus{position:absolute;inset:0;display:flex;flex-direction:column;gap:10px;align-items:center;
+justify-content:center;color:rgba(255,255,255,.75);text-align:center;padding:14px}
+#txDetail{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;align-items:center;
+gap:7px;padding:10px 8px}
+#txDetail[hidden]{display:none}
+#txDetName{font-weight:700;font-size:15px;text-align:center;overflow-wrap:anywhere}
+#txDetMeta{color:rgba(160,190,255,.85)}
+#txDetDesc{text-align:center;max-width:480px;color:rgba(255,255,255,.85);line-height:1.45}
+#txDetCents{font-size:10px;color:rgba(160,190,255,.8);max-width:520px;text-align:center;line-height:1.6;
+font-variant-numeric:tabular-nums}
+.tx-actions{display:flex;gap:8px;margin-top:2px;flex-wrap:wrap;justify-content:center}
+#txUse{background:rgba(120,180,255,.4)}
+.tx-credit{flex-shrink:0;text-align:center;font-size:9px;color:rgba(255,255,255,.32);padding:4px 0 2px}
+</style>
+</head>
+<body>
+<!-- ---------- MAIN CANVAS ---------- -->
+<div id="soundPad"><div id="drumGrid"></div>
+<svg id="scaleGrid" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+<div id="scaleLabels"></div>
+<canvas id="hexGrid"></canvas></div>
+
+<!-- ---------- SYNTH OPTIONS POPOVER ---------- -->
+<div id="synthCfgPanel" hidden>
+  <label>Voice
+    <select id="voiceSel"></select>
+  </label>
+  <button id="voiceLabBtn">⚗ Voice Lab…</button>
+  <button id="tunExplorerBtn">🌐 Tuning Explorer…</button>
+  <label>Low note
+    <select id="baseOctSel">
+      <option value="1">C1 · deep</option><option value="2">C2</option><option value="3">C3</option>
+      <option value="4">C4</option><option value="5">C5 · high</option>
+    </select>
+  </label>
+  <label>Hex key size
+    <select id="hexSizeSel">
+      <option value="0.8">Small</option><option value="1">Normal</option>
+      <option value="1.3">Large</option><option value="1.6">Huge</option>
+    </select>
+  </label>
+  <label>Edge margin
+    <select id="edgeInsetSel">
+      <option value="0">Off</option><option value="24">Small</option><option value="40">Big</option>
+    </select>
+  </label>
+  <label>Hex step →
+    <select id="hexEastSel"></select>
+  </label>
+  <label>Hex step ↗
+    <select id="hexNESel"></select>
+  </label>
+  <label>Loop measures
+    <select id="barsSel">
+      <option value="1">1</option><option value="2">2</option><option value="4">4</option>
+      <option value="8">8</option><option value="12">12</option><option value="16">16</option>
+    </select>
+  </label>
+  <label>Beats / measure
+    <select id="timeSigSel">
+      <option value="2">2</option><option value="3">3</option><option value="4">4</option>
+      <option value="5">5</option><option value="6">6</option><option value="7">7</option>
+      <option value="8">8</option><option value="9">9</option>
+    </select>
+  </label>
+</div>
+
+<!-- ---------- ⚗ VOICE LAB TAB ---------- -->
+<div id="labToggle">⚗ Lab</div>
+<div id="voiceLabPanel" hidden>
+<div id="vlMain">
+  <div class="vl-title">⚗ Voice Lab<button id="vlClose">×</button></div>
+  <canvas id="vlSpec"></canvas>
+  <div class="vl-h">Source — what vibrates</div>
+  <label>Partials <input type="range" id="vlCount" min="1" max="10" step="1"><span class="vl-v" id="vlCountV"></span></label>
+  <label>Stretch <input type="range" id="vlStretch" min="-30" max="50" step="1"><span class="vl-v" id="vlStretchV"></span></label>
+  <label>Tilt <input type="range" id="vlTilt" min="0" max="30" step="1"><span class="vl-v" id="vlTiltV"></span></label>
+  <label>Sieve
+    <select id="vlSieve">
+      <option value="all">All</option><option value="odd">Odd</option>
+      <option value="oct">Octaves</option><option value="3rd">Every 3rd</option>
+    </select>
+  </label>
+  <label>Width <input type="range" id="vlWidth" min="0" max="25" step="1"><span class="vl-v" id="vlWidthV"></span></label>
+  <label>Breath <input type="range" id="vlBreath" min="0" max="60" step="2"><span class="vl-v" id="vlBreathV"></span></label>
+  <div class="vl-h">Body — what it resonates through</div>
+  <label>Formant <input type="range" id="vlFormantF" min="200" max="4000" step="20"><span class="vl-v" id="vlFormantFV"></span></label>
+  <label>Resonance <input type="range" id="vlFormantA" min="0" max="18" step="1"><span class="vl-v" id="vlFormantAV"></span></label>
+  <div class="vl-h">Time — how it lives</div>
+  <label>Attack <input type="range" id="vlAttack" min="0" max="30" step="1"><span class="vl-v" id="vlAttackV"></span></label>
+  <label>Decay <input type="range" id="vlDecay" min="0" max="150" step="5"><span class="vl-v" id="vlDecayV"></span></label>
+  <label>Damping <input type="range" id="vlDamping" min="0" max="100" step="5"><span class="vl-v" id="vlDampingV"></span></label>
+  <label>Vibrato <input type="range" id="vlMotion" min="0" max="20" step="1"><span class="vl-v" id="vlMotionV"></span></label>
+  <div class="vl-h">Strike — how it's excited</div>
+  <label>Amount <input type="range" id="vlChiff" min="0" max="80" step="4"><span class="vl-v" id="vlChiffV"></span></label>
+  <label>Color <input type="range" id="vlStrikeF" min="1" max="24" step="1"><span class="vl-v" id="vlStrikeFV"></span></label>
+  <label>Time <input type="range" id="vlStrikeT" min="3" max="120" step="3"><span class="vl-v" id="vlStrikeTV"></span></label>
+  <button id="vlMatch">✨ Match tuning</button>
+  <button id="vlRandom">🎲 Randomize</button>
+  <div class="vl-h">Presets</div>
+  <div id="vlPresets"></div>
+  <div class="vl-h">Your voices</div>
+  <div class="vl-librow"><input id="vlName" placeholder="voice name" maxlength="24"><button id="vlSave">Save voice</button></div>
+  <div id="vlList"></div>
+</div>
+<div id="vlPadCol">
+  <select id="vlPadOct" title="strip bottom note">
+    <option value="1">C1</option><option value="2">C2</option><option value="3">C3</option>
+    <option value="4">C4</option><option value="5">C5</option><option value="6">C6</option>
+  </select>
+  <div id="vlPad"><span id="vlPadNote">♪</span></div>
+</div>
+</div>
+
+<!-- ---------- 🌐 TUNING EXPLORER (Scala archive browser) ---------- -->
+<div id="tunExplorer" hidden>
+  <div class="tx-head">
+    <span class="tx-title">🌐 Tunings<span id="txCount"></span></span>
+    <button id="txRandom" title="surprise me">🎲</button>
+    <button id="txClose">×</button>
+  </div>
+  <div id="txHisto"></div>
+  <div id="txChipRow"><div id="txChips"></div><input id="txSearch" placeholder="search…"></div>
+  <div id="txGrid"><div id="txPad"></div><div id="txStatus"></div></div>
+  <div id="txDetail" hidden>
+    <canvas id="txDetCanvas"></canvas>
+    <canvas id="txDetRuler"></canvas>
+    <div id="txDetName"></div>
+    <div id="txDetMeta"></div>
+    <div id="txDetDesc"></div>
+    <div id="txDetCents"></div>
+    <div class="tx-actions">
+      <button id="txBack">← Back</button>
+      <button id="txHear">▶ Hear it</button>
+      <button id="txUse">✓ Use tuning</button>
+    </div>
+  </div>
+  <div class="tx-credit">Scala scale archive © Manuel Op de Coul · huygens-fokker.org/scala</div>
+</div>
+
+<!-- ---------- RECORDINGS PANEL ---------- -->
+<div id="recordingsToggle"><span>Recordings</span><span id="dropdownArrow">▼</span></div>
+<div id="recordingBadge" class="recording-badge">0</div>
+<div id="recordingsPanel"><div style="color:#fff;text-align:center;font-size:14px;margin-bottom:4px">Recordings</div><div id="metRow"></div><div id="recordingsList"></div></div>
+
+<!-- ---------- BOTTOM STACK: beat dots / time scrubber / controls ---------- -->
+<div id="bottomStack">
+<div id="beatIndicator" class="beat-indicator"></div>
+<div id="scrubRow"><input type="range" id="scrubSlider" min="0" max="32" step="0.01" value="0"></div>
+<div id="controls">
+  <div class="control-group"><label>Instr:</label><button id="instrumentBtn">Synth</button></div>
+  <div class="control-group"><label>Scale</label>
+    <select id="edoSel"></select>
+    <select id="scaleSel"></select>
+    <select id="rootSel"></select>
+    <button id="synthCfgBtn" title="synth options">⚙</button>
+  </div>
+  <div class="control-group"><label>Tempo</label><input type="range" id="tempoSlider" min="40" max="200" value="120"><span id="tempoValue" class="control-value">120 BPM</span></div>
+  <div class="control-group"><button id="metronomeBtn">Met:Off</button><div id="metronomeLight"></div><span id="barCounter">1.1</span></div>
+  <div class="control-group"><button id="recordBtn">Rec</button><button id="playAllBtn">Play</button><button id="stopBtn">Stop</button></div>
+</div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded',()=>{
+
+/* ==== DOM ==== */
+const $=id=>document.getElementById(id);
+const pad=$('soundPad'), grid=$('drumGrid'),
+      tempoSlider=$('tempoSlider'), tempoValue=$('tempoValue'),
+      metBtn=$('metronomeBtn'), metLight=$('metronomeLight'), barCounter=$('barCounter'),
+      beatIndicator=$('beatIndicator'), recordBtn=$('recordBtn'), playBtn=$('playAllBtn'),
+      stopBtn=$('stopBtn'), recToggle=$('recordingsToggle'),
+      arrow=$('dropdownArrow'), recordingsPanel=$('recordingsPanel'), recordingsList=$('recordingsList'),
+      badge=$('recordingBadge'), instBtn=$('instrumentBtn'),
+      scaleSel=$('scaleSel'), rootSel=$('rootSel'), scaleGridEl=$('scaleGrid'),
+      scaleLabels=$('scaleLabels'), scrubSlider=$('scrubSlider'),
+      edoSel=$('edoSel'), hexCanvas=$('hexGrid'),
+      synthCfgBtn=$('synthCfgBtn'), synthCfgPanel=$('synthCfgPanel'),
+      baseOctSel=$('baseOctSel'), hexSizeSel=$('hexSizeSel'), edgeInsetSel=$('edgeInsetSel'),
+      hexEastSel=$('hexEastSel'), hexNESel=$('hexNESel'),
+      barsSel=$('barsSel'), timeSigSel=$('timeSigSel'), voiceSel=$('voiceSel'),
+      voiceLabBtn=$('voiceLabBtn'), voiceLabPanel=$('voiceLabPanel'),
+      vlSieve=$('vlSieve'), vlMatch=$('vlMatch'), vlSpec=$('vlSpec'),
+      labToggle=$('labToggle'), vlClose=$('vlClose'), vlName=$('vlName'),
+      vlSave=$('vlSave'), vlList=$('vlList'), vlPresets=$('vlPresets'),
+      vlPad=$('vlPad'), vlPadNote=$('vlPadNote'), vlRandom=$('vlRandom'), vlPadOct=$('vlPadOct'),
+      tunExplorer=$('tunExplorer'), tunExplorerBtn=$('tunExplorerBtn'),
+      txClose=$('txClose'), txRandom=$('txRandom'), txCount=$('txCount'),
+      txHisto=$('txHisto'), txChips=$('txChips'), txSearch=$('txSearch'),
+      txGrid=$('txGrid'), txPad=$('txPad'), txStatus=$('txStatus'), txDetail=$('txDetail'),
+      txDetCanvas=$('txDetCanvas'), txDetRuler=$('txDetRuler'), txDetName=$('txDetName'), txDetMeta=$('txDetMeta'),
+      txDetDesc=$('txDetDesc'), txDetCents=$('txDetCents'),
+      txBack=$('txBack'), txHear=$('txHear'), txUse=$('txUse');
+
+/* ==== GRID SIZE ==== */
+const COLS=6, ROWS=3;
+
+/* ---- build overlay lines ---- */
+for(let i=1;i<COLS;i++){const l=document.createElement('div');l.className='drum-v';l.style.left=`${i*100/COLS}%`;grid.appendChild(l);}
+for(let r=1;r<ROWS;r++){const l=document.createElement('div');l.className='drum-h';l.style.top=`${100-r*100/ROWS}%`;grid.appendChild(l);}
+
+/* ==== AUDIO ==== */
+let ctx;const audio=()=>{if(!ctx)ctx=new (window.AudioContext||webkitAudioContext)();if(ctx.state!=='running')ctx.resume();return ctx;};
+/* master limiter bus — many overlapping voices (3-finger drags retrigger new
+   oscillators while old release tails still sound) used to sum past 1.0 and
+   hard-clip into crackles; the compressor squashes peaks smoothly instead */
+let busNode=null;
+const bus=()=>{const c=audio();
+  if(!busNode){const comp=c.createDynamicsCompressor();
+    comp.threshold.value=-10;comp.knee.value=6;comp.ratio.value=12;comp.attack.value=.003;comp.release.value=.25;
+    const mg=c.createGain();mg.gain.value=.8;    // headroom so the off-bus met tick can't push the sum into clipping
+    comp.connect(mg);mg.connect(c.destination);busNode=comp;}
+  return busNode;};
+/* per-track volume: every track owns one persistent GainNode feeding the bus.
+   Voices/drums route through vout() — `voiceDest` is set (synchronously, only
+   around the node-creation call) by dispatch() for playback and by the live
+   handlers while recording, so preview/audition paths still hit the bus raw. */
+let voiceDest=null;
+const vout=()=>voiceDest||bus();
+const trackGains=new Map();
+function trackOut(rid){
+  const c=audio();let g=trackGains.get(rid);
+  if(!g){g=c.createGain();
+    const r=recordings.find(x=>x.id===rid);
+    g.gain.value=(r&&typeof r.gain==='number')?r.gain:1;
+    g.connect(bus());trackGains.set(rid,g);}          // straight to the bus — vout() here would self-connect during dispatch
+  return g;
+}
+function setTrackGain(r,v){
+  r.gain=Math.min(1,Math.max(0,v));
+  const g=trackGains.get(r.id);
+  if(g)g.gain.setTargetAtTime(r.gain,audio().currentTime,.02);  // small ramp — no zipper noise
+}
+function dropTrackGain(rid){
+  const g=trackGains.get(rid);
+  if(!g)return;
+  trackGains.delete(rid);
+  // fade fast, disconnect LATER — an instant disconnect hard-cuts any voices
+  // still releasing through this gain (delete/clear/load while ringing) = pop.
+  // 3s outlives the longest voice tail (bell rings 2.4s after release).
+  try{g.gain.setTargetAtTime(0,audio().currentTime,.02)}catch(_){}
+  setTimeout(()=>{try{g.disconnect()}catch(_){}},3000);
+}
+function dropAllTrackGains(){[...trackGains.keys()].forEach(dropTrackGain);}
+
+/* ==== GLOBAL STATE ==== */
+let instrument='synth';
+instBtn.onclick=()=>{[...touches.keys()].forEach(pid=>synthEnd(pid));   // release held notes before switching
+  instrument=instrument==='synth'?'hex':instrument==='hex'?'drums':'synth';
+  instBtn.textContent=instrument==='synth'?'Synth':instrument==='hex'?'Hex':'Drums';
+  grid.style.display=instrument==='drums'?'block':'none';
+  renderScaleGrid();drawHexGrid();};
+grid.style.display='none';
+
+let tempo=120,metOn=false,metVol=1,metGen=0,beat=0,bar=0,nextBeat=0,tickTimer=null,loopAnchor=null;
+const RELEASE=.05, MARKER_FADE=50, OSC_TAIL=300;
+let timeSig=4,barsPerLoop=8,beatsPerLoop=timeSig*barsPerLoop;   // loop shape — configurable in ⚙
+let isRec=false,isPlay=false,recordings=[],recSeq=1,curRec=null;
+const touches=new Map();let nextNoteId=1;
+let playTimers=[],cycleTimer=null,playOrigin,playGen=0;const playNotes=new Map();
+
+/* ==== UTILS ==== */
+function marker(cls,x,y,bg,text){const d=document.createElement('div');d.className=cls;
+  Object.assign(d.style,{left:x+'px',top:y+'px',width:'32px',height:'32px',background:bg});
+  d.textContent=text;pad.appendChild(d);return d;}
+function showHit(kind,x,y,play){const m=marker(play?'playback-marker':'note-marker',x,y,'rgba(255,255,0,.25)',kind[0].toUpperCase());
+  setTimeout(()=>m.remove(),220);}
+
+/* ==== NOISE BUFFER ==== */
+let noiseBuf=null;
+function noise(){if(noiseBuf)return noiseBuf;const c=audio();
+  // 2s: the longest un-looped users (ride stops at t+1.4, crash at t+1.6)
+  // must not outlive the buffer — a 1s buffer ended mid-envelope at ~-40dB,
+  // an audible truncation of the cymbal tails
+  noiseBuf=c.createBuffer(1,c.sampleRate*2,c.sampleRate);
+  const d=noiseBuf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;return noiseBuf;}
+const env=(g,t,h,d)=>{g.gain.setValueAtTime(1,t);g.gain.exponentialRampToValueAtTime(.001,t+h+d);};
+
+/* ====== PERCUSSION ENGINES ====== */
+/*  row 0 – acoustic-ish ------------------------------------------------ */
+function kick(p,t=audio().currentTime){const c=audio(),o=c.createOscillator(),g=c.createGain();
+  const f1=100+120*p,f2=40+40*p;o.type='sine';o.frequency.setValueAtTime(f1,t);o.frequency.exponentialRampToValueAtTime(f2,t+.45);
+  env(g,t,0,.45);o.connect(g);g.connect(vout());o.start(t);o.stop(t+.5);}
+function snare(p,t=audio().currentTime){const c=audio();
+  const n=c.createBufferSource();n.buffer=noise();const nf=c.createBiquadFilter();nf.type='highpass';nf.frequency.value=1200;
+  const ng=c.createGain();env(ng,t,.02,.18);n.connect(nf);nf.connect(ng);ng.connect(vout());n.start(t);n.stop(t+.2);
+  const o=c.createOscillator(),g=c.createGain();o.type='triangle';o.frequency.setValueAtTime(120+180*p,t);env(g,t,.02,.18);
+  o.connect(g);g.connect(vout());o.start(t);o.stop(t+.2);}
+function hatc(p,t=audio().currentTime){const c=audio(),n=c.createBufferSource();n.buffer=noise();
+  const hp=c.createBiquadFilter();hp.type='highpass';hp.frequency.value=6000+4000*p;
+  const g=c.createGain();env(g,t,.01,.06);n.connect(hp);hp.connect(g);g.connect(vout());n.start(t);n.stop(t+.07);}
+function hato(p,t=audio().currentTime){const c=audio(),n=c.createBufferSource();n.buffer=noise();
+  const hp=c.createBiquadFilter();hp.type='highpass';hp.frequency.value=5000+4000*p;
+  const g=c.createGain();env(g,t,.1,.4);n.connect(hp);hp.connect(g);g.connect(vout());n.start(t);n.stop(t+.5);}
+function clap(p,t=audio().currentTime){const c=audio(),bp=c.createBiquadFilter();bp.type='bandpass';bp.frequency.value=700+600*p;
+  for(let i=0;i<3;i++){const n=c.createBufferSource();n.buffer=noise();const g=c.createGain();
+    env(g,t+i*0.015,.005,.07);n.connect(bp);bp.connect(g);g.connect(vout());
+    n.start(t+i*0.015);n.stop(t+.15);} }
+function tomLow(p,t=audio().currentTime){const c=audio(),o=c.createOscillator(),g=c.createGain();
+  const f1=150+200*p,f2=60+40*p;o.type='triangle';o.frequency.setValueAtTime(f1,t);o.frequency.exponentialRampToValueAtTime(f2,t+.5);
+  env(g,t,.02,.48);o.connect(g);g.connect(vout());o.start(t);o.stop(t+.55);}
+
+/*  row 1 – mid kit ------------------------------------------------------ */
+function kick808(p,t){kick(Math.min(1,p+.3),t);}             // deeper / longer
+function rim(p,t=audio().currentTime){const c=audio(),o=c.createOscillator(),g=c.createGain();
+  o.type='square';o.frequency.value=1800+400*p;env(g,t,.005,.08);o.connect(g);g.connect(vout());
+  o.start(t);o.stop(t+.09);}
+function shaker(p,t=audio().currentTime){const c=audio(),n=c.createBufferSource();n.buffer=noise();
+  const bp=c.createBiquadFilter();bp.type='bandpass';bp.frequency.value=3000+2000*p;
+  const g=c.createGain();env(g,t,.01,.12);n.connect(bp);bp.connect(g);g.connect(vout());
+  n.start(t);n.stop(t+.14);}
+function cowbell(p,t=audio().currentTime){const c=audio(),o1=c.createOscillator(),o2=c.createOscillator(),g=c.createGain();
+  o1.type='square';o2.type='square';o1.frequency.value=800+200*p;o2.frequency.value=1200+300*p;
+  env(g,t,.02,.25);o1.connect(g);o2.connect(g);g.connect(vout());o1.start(t);o2.start(t);o1.stop(t+.3);o2.stop(t+.3);}
+function bigClap(p,t){clap(Math.min(1,p+.3),t);}
+function tomMid(p,t){tomLow(Math.min(1,p+.35),t);}
+
+/*  row 2 – high / FX kit ----------------------------------------------- */
+function subKick(p,t){kick(Math.max(0,p-.4),t);}
+function snap(p,t=audio().currentTime){const c=audio(),n=c.createBufferSource();n.buffer=noise();
+  const hp=c.createBiquadFilter();hp.type='highpass';hp.frequency.value=4000+3000*p;
+  const g=c.createGain();env(g,t,.005,.07);n.connect(hp);hp.connect(g);g.connect(vout());
+  n.start(t);n.stop(t+.08);}
+function ride(p,t=audio().currentTime){const c=audio(),n=c.createBufferSource();n.buffer=noise();
+  const hp=c.createBiquadFilter();hp.type='highpass';hp.frequency.value=8000+1000*p;
+  const g=c.createGain();env(g,t,.4,.9);n.connect(hp);hp.connect(g);g.connect(vout());n.start(t);n.stop(t+1.4);}
+function crash(p,t=audio().currentTime){const c=audio(),n=c.createBufferSource();n.buffer=noise();
+  const bp=c.createBiquadFilter();bp.type='bandpass';bp.frequency.value=3000+2000*p;
+  const g=c.createGain();env(g,t,.3,1.2);n.connect(bp);bp.connect(g);g.connect(vout());n.start(t);n.stop(t+1.6);}
+function clave(p,t=audio().currentTime){const c=audio(),o=c.createOscillator(),g=c.createGain();
+  o.type='square';o.frequency.value=2500+1000*p;env(g,t,.005,.06);o.connect(g);g.connect(vout());o.start(t);o.stop(t+.07);}
+function tomHigh(p,t){tomLow(Math.max(0,p-.35),t);}
+
+/*  Map every unique name to function */
+const drumMap={
+  /* row 0 */ kick,snare,hatc,hato,clap,tomLow,
+  /* row 1 */ kick808,rim,shaker,cowbell,bigClap,tomMid,
+  /* row 2 */ subKick,snap,ride,crash,clave,tomHigh
+};
+
+/* ====== ROW/ COLUMN  → instrument name ====== */
+const rowInstruments=[
+  ['kick','snare','hatc','hato','clap','tomLow'],
+  ['kick808','rim','shaker','cowbell','bigClap','tomMid'],
+  ['subKick','snap','ride','crash','clave','tomHigh']
+];
+
+/* ==== SYNTH (melodic) — generalized to any equal temperament ====
+   Pitch is linear in pad position: EDO steps above BASE = X*nx + Y*ny where
+   X = 5 fifths and Y = 5 major thirds OF THE CURRENT EDO (12-EDO: 35 & 20,
+   exactly the original layout). */
+const C3=130.81;let baseOct=3,hexScale=1;            // low note + hex key size (⚙ panel)
+// Android gesture navigation reserves ~30px strips at the screen edges — a
+// SECOND finger landing there while one is held gets eaten by the system's
+// back-gesture detector (web content can't request exclusion zones). The edge
+// margin pulls the hex keys inward out of those strips; default on for Android.
+let edgeInset=(typeof navigator!=='undefined'&&/Android/i.test(navigator.userAgent||''))?24:0;
+const baseFreq=()=>C3*Math.pow(2,baseOct-3);         // step 0 ("BASE") in every tuning
+const EDOS=[5,6,7,8,9,10,11,12,13,14,15,16,17,19,22,24,26,31,34,41,53];
+let edo=12;
+/* ==== SCALA TUNINGS (🌐 Tuning Explorer) ====
+   `scl` = the active Scala-archive tuning, or null for plain EDO mode.
+   A tuning is {name, cents:[...]}: the cents of degrees 1..N above the base
+   note, the LAST entry being the period (the "formal octave" — not always
+   1200¢: Bohlen–Pierce repeats at a twelfth, Carlos alpha at ~78¢). All
+   pitch math funnels through stepCents(k) — linear in k for EDOs, table
+   lookup + period stacking for Scala scales — so the hex keyboard, the
+   quantize lines, note names and ✨Match work identically in any tuning. */
+let scl=null;
+const tunN=()=>scl?scl.cents.length:edo;             // steps per period
+function sanitizeScl(s){
+  if(!s||typeof s!=='object'||!Array.isArray(s.cents))return null;
+  const c=s.cents.slice(0,600).map(Number);
+  if(!c.length||c.some(v=>!isFinite(v)||v<-24000||v>24000))return null;  // ±20 octaves — dekany_indra dips to -19167c
+  if(!(c[c.length-1]>0))return null;                 // period must stack upward
+  return {name:String(s.name||'custom').slice(0,60),cents:c};
+}
+function stepCents(k){                               // cents of step k above the base (any integer k)
+  if(!scl)return k*1200/edo;
+  const N=scl.cents.length,P=scl.cents[N-1],o=Math.floor(k/N),i=k-o*N;
+  return o*P+(i===0?0:scl.cents[i-1]);
+}
+const stepFreqFrom=(base,k)=>base*Math.pow(2,stepCents(k)/1200);
+const stepFreq=k=>stepFreqFrom(baseFreq(),k);
+function nearestStep(c){                             // step index nearest to `c` cents above base
+  if(!scl)return Math.round(edo*c/1200);
+  const N=scl.cents.length,P=scl.cents[N-1],o=Math.floor(c/P);
+  let best=o*N,bd=1e9;
+  for(let k=(o-1)*N;k<=(o+2)*N;k++){const d=Math.abs(stepCents(k)-c);if(d<bd){bd=d;best=k;}}
+  return best;
+}
+const edoFifth=n=>Math.round(n*Math.log2(3/2));      // best fifth of n-EDO
+const edoThird=n=>Math.round(n*Math.log2(5/4));      // best major third
+/* generator steps of the CURRENT tuning — the step nearest a pure fifth /
+   major third (exactly edoFifth/edoThird in EDO mode). Memoized per tuning:
+   Scala mode scans step-by-step, and tiny-period scales (Carlos alpha) may
+   need several periods to reach 702¢. */
+function bestStep(cents){
+  if(!scl)return Math.round(edo*cents/1200);
+  const N=scl.cents.length,P=scl.cents[N-1];
+  let best=1,bd=1e9;
+  const lim=Math.min(2000,N*(Math.ceil((cents+P)/Math.max(P,1))+1));
+  for(let k=1;k<=lim;k++){const d=Math.abs(stepCents(k)-cents);if(d<bd){bd=d;best=k;}}
+  return best;
+}
+const tunFifth=()=>{if(!scl)return edoFifth(edo);
+  if(scl._f===undefined)scl._f=bestStep(701.955);return scl._f;};
+const tunThird=()=>{if(!scl)return edoThird(edo);
+  if(scl._t===undefined)scl._t=bestStep(386.314);return scl._t;};
+const spanX=()=>5*tunFifth(), spanY=()=>5*tunThird();
+/* continuous pad position → frequency: piecewise-linear cents between
+   neighbouring steps (reduces exactly to 2^(s/edo) in EDO mode) */
+function posFreq(s){const k=Math.floor(s),t=s-k,c0=stepCents(k);
+  return baseFreq()*Math.pow(2,(c0+(stepCents(k+1)-c0)*t)/1200);}
+const freq=(nx,ny)=>posFreq(spanX()*nx+spanY()*ny);
+const noteName=f=>{
+  if(edo===12&&!scl){const N=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+    const s=Math.round(12*Math.log2(f/16.35));return N[(s%12+12)%12]+Math.floor(s/12);}
+  const st=nearestStep(1200*Math.log2(f/baseFreq())),N=tunN();
+  return (((st%N)+N)%N)+'\\'+N;                      // microtonal degree notation, e.g. 5\13
+};
+
+/* ==== QUANTIZE (scale snapping + pitch-line grid) ====
+   "Every position playing step k" is the diagonal line X*x+Y*y=k — the grid
+   renders one line per scale note and touches snap (and project) onto them.
+   Scales are defined as CHAINS OF FIFTHS (a generator chain with the root at
+   chain index `root`), which makes the diatonic modes and pentatonics
+   meaningful in every EDO — in 12-EDO they reduce to exactly the classic
+   sets. 12-only interval scales keep an explicit steps list. */
+const SCALES={
+  off:      null,
+  chromatic:{kind:'all',       name:'Chromatic'},
+  lydian:   {kind:'chain',len:7,root:0,name:'Lydian'},
+  major:    {kind:'chain',len:7,root:1,name:'Major'},
+  mixo:     {kind:'chain',len:7,root:2,name:'Mixolydian'},
+  dorian:   {kind:'chain',len:7,root:3,name:'Dorian'},
+  minor:    {kind:'chain',len:7,root:4,name:'Minor'},
+  phrygian: {kind:'chain',len:7,root:5,name:'Phrygian'},
+  locrian:  {kind:'chain',len:7,root:6,name:'Locrian'},
+  majpent:  {kind:'chain',len:5,root:0,name:'Maj Pent'},
+  minpent:  {kind:'chain',len:5,root:3,name:'Min Pent'},
+  blues:    {kind:'steps',steps:[0,3,5,6,7,10],name:'Blues',edo12:true},
+  harmminor:{kind:'steps',steps:[0,2,3,5,7,8,11],name:'Harm Minor',edo12:true},
+  whole:    {kind:'steps',steps:[0,2,4,6,8,10],name:'Whole Tone',edo12:true},
+};
+const SCALE_ORDER=['off','major','minor','lydian','mixo','dorian','phrygian','locrian',
+  'majpent','minpent','blues','harmminor','whole','chromatic'];
+const ROOTS=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+let scaleKey='off',rootSemi=0,quantOn=false,allowedSemis=[],scalePCs=null;
+function scaleSteps(def){                            // pitch-class Set (root at 0) in the current tuning
+  const N=tunN(),set=new Set();
+  if(def.kind==='all'){for(let i=0;i<N;i++)set.add(i);}
+  else if(def.kind==='chain'){const g=tunFifth();
+    for(let i=0;i<def.len;i++)set.add((((i-def.root)*g)%N+N)%N);}
+  else def.steps.forEach(s=>{if(s<N)set.add(s);});
+  return set;
+}
+const stepPrefMax=()=>Math.min(tunN(),96);           // hex-step numeric prefs stay sane on giant scales
+function rebuildTuningSelects(){
+  const N=tunN(),esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  let eh=EDOS.map(n=>'<option value="'+n+'">'+n+'-EDO</option>').join('');
+  if(scl)eh+='<option value="scl">✦ '+esc(scl.name)+'</option>';
+  eh+='<option value="browse">🌐 Explore…</option>';  // opens the Tuning Explorer
+  edoSel.innerHTML=eh;
+  edoSel.value=scl?'scl':String(edo);
+  if(SCALES[scaleKey]&&SCALES[scaleKey].edo12&&(edo!==12||scl))scaleKey='chromatic';
+  scaleSel.innerHTML=SCALE_ORDER.filter(k=>!(SCALES[k]&&SCALES[k].edo12&&(edo!==12||scl)))
+    .map(k=>'<option value="'+k+'">'+(k==='off'?'Off':SCALES[k].name)+'</option>').join('');
+  scaleSel.value=scaleKey;
+  if(rootSemi>=N)rootSemi=0;
+  let ro='';for(let i=0;i<N;i++)ro+='<option value="'+i+'">'+((edo===12&&!scl)?ROOTS[i]:i)+'</option>';
+  rootSel.innerHTML=ro;rootSel.value=String(rootSemi);
+  baseOctSel.value=String(baseOct);hexSizeSel.value=String(hexScale);edgeInsetSel.value=String(edgeInset);
+  buildVoiceOptions();
+  // layout-step selects: 'auto' (Wicki–Hayden for this tuning) + 0..N steps
+  if(typeof hexEastPref==='number'&&hexEastPref>stepPrefMax())hexEastPref='auto';
+  if(typeof hexNEPref==='number'&&hexNEPref>stepPrefMax())hexNEPref='auto';
+  const stepOpts=(auto)=>{let h='<option value="auto">Auto (+'+auto+')</option>';
+    for(let i=0;i<=stepPrefMax();i++)h+='<option value="'+i+'">+'+i+'</option>';return h;};
+  hexEastSel.innerHTML=stepOpts(Math.max(1,2*tunFifth()-N));hexEastSel.value=String(hexEastPref);
+  hexNESel.innerHTML=stepOpts(tunFifth());hexNESel.value=String(hexNEPref);
+}
+function buildVoiceOptions(){
+  const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  let h='';for(const k in VOICES)h+='<option value="'+k+'">'+VOICES[k].name+'</option>';
+  h+='<option value="lab">⚗ Lab</option>';
+  voiceLib.forEach(v=>{h+='<option value="v:'+esc(v.name)+'">⚗ '+esc(v.name)+'</option>';});
+  voiceSel.innerHTML=h;voiceSel.value=voiceKey;
+}
+function loadQuantPrefs(){try{const p=JSON.parse(localStorage.getItem('synth.quant.v1'))||{};
+  if(EDOS.includes(p.edo))edo=p.edo;
+  if(p.scl)scl=sanitizeScl(p.scl);                   // before the tuning-relative bounds below
+  if(SCALES.hasOwnProperty(p.scale))scaleKey=p.scale;
+  if(typeof p.root==='number'&&p.root>=0&&p.root<tunN())rootSemi=Math.floor(p.root);
+  if(typeof p.baseOct==='number'&&p.baseOct>=1&&p.baseOct<=5)baseOct=Math.round(p.baseOct);
+  if([0.8,1,1.3,1.6].includes(p.hexScale))hexScale=p.hexScale;
+  if([0,24,40].includes(p.edgeInset))edgeInset=p.edgeInset;
+  const stepOk=(v)=>v==='auto'||(typeof v==='number'&&v>=0&&v<=stepPrefMax()&&v===Math.round(v));
+  if(stepOk(p.hexEast))hexEastPref=p.hexEast;
+  if(stepOk(p.hexNE))hexNEPref=p.hexNE;
+  if([1,2,4,8,12,16].includes(p.bars))barsPerLoop=p.bars;
+  if(typeof p.timeSig==='number'&&p.timeSig>=2&&p.timeSig<=9)timeSig=Math.round(p.timeSig);
+  beatsPerLoop=timeSig*barsPerLoop;
+  if(p.labGen&&typeof p.labGen==='object')labGen=sanitizeGen(p.labGen);
+  if(Array.isArray(p.voiceLib))voiceLib=p.voiceLib
+    .filter(v=>v&&typeof v.name==='string'&&v.name.trim())
+    .slice(0,64).map(v=>({name:String(v.name).slice(0,24),gen:sanitizeGen(v.gen)}));
+  if(p.voice==='lab'||VOICES.hasOwnProperty(p.voice)
+    ||(typeof p.voice==='string'&&p.voice.slice(0,2)==='v:'&&voiceLib.some(x=>'v:'+x.name===p.voice)))voiceKey=p.voice;
+  if(typeof p.padOct==='number'&&p.padOct>=1&&p.padOct<=6)padOct=Math.round(p.padOct);
+  if(typeof p.metVol==='number'&&p.metVol>=0&&p.metVol<=1)metVol=p.metVol;}catch(_){}}
+function saveQuantPrefs(){try{localStorage.setItem('synth.quant.v1',
+  JSON.stringify({scale:scaleKey,root:rootSemi,edo:edo,scl:scl?{name:scl.name,cents:scl.cents}:null,
+    baseOct:baseOct,hexScale:hexScale,
+    edgeInset:edgeInset,hexEast:hexEastPref,hexNE:hexNEPref,bars:barsPerLoop,timeSig:timeSig,
+    voice:voiceKey,labGen:labGen,voiceLib:voiceLib,padOct:padOct,metVol:metVol}))}catch(_){}}
+function applyQuant(){
+  rebuildTuningSelects();
+  quantOn=!!SCALES[scaleKey];allowedSemis=[];
+  scalePCs=quantOn?scaleSteps(SCALES[scaleKey]):null;
+  if(quantOn){const max=spanX()+spanY(),N=tunN();
+    for(let k=0;k<=max;k++)if(scalePCs.has(((k-rootSemi)%N+N)%N))allowedSemis.push(k);}
+  saveQuantPrefs();renderScaleGrid();drawHexGrid();drawLabSpec();
+}
+function snapSemi(s){let best=allowedSemis[0],bd=1e9;
+  for(const k of allowedSemis){const d=Math.abs(k-s);if(d<bd){bd=d;best=k;}}return best;}
+function pitchAt(nx,ny){
+  if(!quantOn||!allowedSemis.length)return {f:freq(nx,ny),nx,ny};
+  const X=spanX(),Y=spanY(),s=X*nx+Y*ny,k=snapSemi(s),d=(s-k)/(X*X+Y*Y);   // project onto the iso-pitch line
+  return {f:stepFreq(k),
+    nx:Math.min(1,Math.max(0,nx-X*d)),ny:Math.min(1,Math.max(0,ny-Y*d))};
+}
+const lineHue=k=>(Math.log2(stepFreq(k))*100)%360;   // same hue formula as the note markers
+function renderScaleGrid(){
+  const show=quantOn&&instrument==='synth';
+  scaleGridEl.style.display=show?'block':'none';scaleLabels.style.display=show?'block':'none';
+  if(!show)return;
+  const X=spanX(),Y=spanY(),lines=[];let labels='';
+  for(const k of allowedSemis){
+    const pts=[];const add=(x,y)=>{if(x>=-1e-9&&x<=1+1e-9&&y>=-1e-9&&y<=1+1e-9)
+      pts.push([Math.min(1,Math.max(0,x)),Math.min(1,Math.max(0,y))]);};
+    add(0,k/Y);add(1,(k-X)/Y);add(k/X,0);add((k-Y)/X,1);   // clip X*x+Y*y=k to the unit square
+    const uniq=pts.filter((p,j)=>pts.findIndex(q=>Math.abs(q[0]-p[0])<1e-6&&Math.abs(q[1]-p[1])<1e-6)===j);
+    if(uniq.length<2)continue;
+    const N=tunN(),[a,b]=uniq,isRoot=((k-rootSemi)%N+N)%N===0,hue=lineHue(k);
+    lines.push('<line x1="'+(a[0]*100).toFixed(2)+'" y1="'+((1-a[1])*100).toFixed(2)+
+      '" x2="'+(b[0]*100).toFixed(2)+'" y2="'+((1-b[1])*100).toFixed(2)+
+      '" stroke="hsl('+hue.toFixed(0)+' 70% 70%/'+(isRoot?'.75':'.3')+')" stroke-width="'+(isRoot?2:1)+
+      '" vector-effect="non-scaling-stroke"/>');
+    if(isRoot){                                       // label only octave roots — the marker names notes live
+      const top=a[1]>b[1]?a:b,bot=a[1]>b[1]?b:a;
+      const lx=top[0]+(bot[0]-top[0])*.04,ly=top[1]+(bot[1]-top[1])*.04;
+      labels+='<div class="scale-label" style="left:'+(lx*100).toFixed(2)+'%;top:'+((1-ly)*100).toFixed(2)+
+        '%;color:hsl('+hue.toFixed(0)+' 80% 78%)">'+noteName(stepFreq(k))+'</div>';
+    }
+  }
+  scaleGridEl.innerHTML=lines.join('');scaleLabels.innerHTML=labels;
+}
+edoSel.onchange=()=>{const v=edoSel.value;
+  if(v==='browse'){rebuildTuningSelects();openExplorer();return;}  // restore the select, open the browser
+  if(v==='scl')return;                               // the active Scala tuning — nothing to change
+  const n=+v;if(EDOS.includes(n)){scl=null;edo=n;}applyQuant();};
+scaleSel.onchange=()=>{scaleKey=SCALES.hasOwnProperty(scaleSel.value)?scaleSel.value:'off';applyQuant();};
+rootSel.onchange=()=>{rootSemi=Math.min(tunN()-1,Math.max(0,(+rootSel.value||0)));applyQuant();};
+
+/* ==== HEX KEYBOARD (Lumatone-style isomorphic keys, any EDO) ====
+   Pointy-top hexes in axial coords: east neighbour = +A steps (whole tone,
+   2*fifth − octave), northeast = +fifth — the Bosanquet/Wicki–Hayden layout
+   generalized to the current EDO (12-EDO: east +2, NE +7). Step 0 (= BASE,
+   the root C) sits at the bottom-left. */
+let hexLayout=null;
+/* layout basis: EDO steps per key going east (→) and northeast (↗).
+   'auto' = generalized Wicki–Hayden (east = whole tone, NE = fifth);
+   numeric prefs let the user build any isomorphic layout — translation
+   invariance holds for every choice since pitch stays linear in (q,r). */
+let hexEastPref='auto',hexNEPref='auto';
+const hexEastStep=()=>hexEastPref==='auto'?Math.max(1,2*tunFifth()-tunN()):hexEastPref;
+const hexNEStep=()=>hexNEPref==='auto'?tunFifth():hexNEPref;
+function hexParams(){
+  // size keys against the USABLE height (above the control stack), aiming for
+  // ~7-8 rows — each row is a fifth up, so that spans a sane ~5 octaves.
+  // hexScale is the user's key-size preference from the ⚙ panel.
+  const bs=$('bottomStack'),bh=(bs&&bs.offsetHeight)||0;
+  const w=pad.clientWidth||320,uh=Math.max(160,(pad.clientHeight||320)-bh-8);
+  const ei=Math.min(edgeInset,w/6),ew=w-2*ei;        // playable span between the edge margins
+  const s0=Math.max(22,Math.min(52,uh/11.4,ew/9.6));
+  const s=Math.max(18,Math.min(96,s0*hexScale)),rx=Math.sqrt(3)/2*s;
+  return {s,w,uh,rx,h:pad.clientHeight||320,x0:ei,x1:w-ei,ox:ei+rx+4,oy:uh-s-2};
+}
+const hexCenter=(q,r,L)=>({x:L.ox+Math.sqrt(3)*L.s*(q+r/2),y:L.oy-1.5*L.s*r});
+function hexFromXY(x,y,L){
+  const rf=(L.oy-y)/(1.5*L.s),qf=(x-L.ox)/(Math.sqrt(3)*L.s)-rf/2;
+  let rq=Math.round(qf),rr=Math.round(rf);const rs=Math.round(-qf-rf);
+  const dq=Math.abs(rq-qf),dr=Math.abs(rr-rf),ds=Math.abs(rs+qf+rf);
+  if(dq>dr&&dq>ds)rq=-rr-rs;else if(dr>ds)rr=-rq-rs;
+  return {q:rq,r:rr};
+}
+const hexStepOf=(q,r)=>q*hexEastStep()+r*hexNEStep();
+function drawHexGrid(){
+  hexCanvas.style.display=instrument==='hex'?'block':'none';
+  if(instrument!=='hex')return;
+  const L=hexParams();hexLayout=L;
+  const dpr=Math.min(window.devicePixelRatio||1,3);
+  hexCanvas.width=Math.round(L.w*dpr);hexCanvas.height=Math.round(L.h*dpr);
+  const c=hexCanvas.getContext('2d');
+  c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,L.w,L.h);
+  c.textAlign='center';c.textBaseline='middle';
+  // draw only keys that fit FULLY inside the pad — no sliced half-hexes at
+  // the edges (edge taps snap inward to the nearest real key instead)
+  const rMax=Math.ceil(L.oy/(1.5*L.s));
+  for(let r=0;r<=rMax;r++){
+    const y=L.oy-1.5*L.s*r;
+    if(y<L.s-1)break;
+    const qLo=Math.floor(-L.ox/(Math.sqrt(3)*L.s)-r/2),qHi=Math.ceil((L.w-L.ox)/(Math.sqrt(3)*L.s)-r/2);
+    for(let q=qLo;q<=qHi;q++){
+      const p=hexCenter(q,r,L);
+      if(p.x<L.x0+L.rx-1||p.x>L.x1-L.rx+1)continue;
+      const N=tunN(),st=hexStepOf(q,r),deg=((st-rootSemi)%N+N)%N;
+      const inScale=!scalePCs||scalePCs.has(deg),isRoot=quantOn&&deg===0;
+      const hue=lineHue(st);
+      c.beginPath();
+      for(let i=0;i<6;i++){const th=Math.PI/6+i*Math.PI/3;
+        const vx=p.x+ (L.s-1)*Math.cos(th),vy=p.y+(L.s-1)*Math.sin(th);
+        i?c.lineTo(vx,vy):c.moveTo(vx,vy);}
+      c.closePath();
+      c.fillStyle=inScale?('hsl('+hue.toFixed(0)+' '+(isRoot?60:42)+'% '+(isRoot?40:29)+'%/'+(isRoot?.85:.55)+')')
+                         :'rgba(255,255,255,.045)';
+      c.fill();
+      c.strokeStyle=isRoot?'rgba(255,255,255,.5)':'rgba(255,255,255,.14)';
+      c.lineWidth=isRoot?1.6:1;
+      c.stroke();
+      c.fillStyle='rgba(255,255,255,'+(inScale?.8:.25)+')';
+      c.font=((edo===12&&!scl)?'600 10px':'600 9px')+' system-ui, sans-serif';
+      c.fillText(noteName(stepFreq(st)),p.x,p.y);
+    }
+  }
+}
+window.addEventListener('resize',()=>{if(instrument==='hex')drawHexGrid();});
+if(window.ResizeObserver)new ResizeObserver(()=>{if(instrument==='hex')drawHexGrid();}).observe(pad);
+
+/* ==== ⚙ SYNTH OPTIONS (low note / hex key size) ==== */
+synthCfgBtn.onclick=()=>{
+  synthCfgPanel.hidden=!synthCfgPanel.hidden;
+  if(!synthCfgPanel.hidden){const bs=$('bottomStack');
+    synthCfgPanel.style.bottom=(((bs&&bs.offsetHeight)||100)+10)+'px';}
+};
+// tap anywhere outside a popover (pad, keys, other controls) to dismiss it;
+// the gear stays excluded or its click would immediately re-toggle
+document.addEventListener('pointerdown',(e)=>{
+  if(!synthCfgPanel.hidden&&!synthCfgPanel.contains(e.target)&&!synthCfgBtn.contains(e.target))
+    synthCfgPanel.hidden=true;
+  // the Voice Lab sheet deliberately does NOT close on outside taps — you
+  // play the keys below it while sculpting; close via ⚗ Lab or its ×
+},true);
+
+/* ==== ⚗ VOICE LAB UI ==== */
+const vlSlider=(id,scale,fmt)=>({el:$(id),v:$(id+'V'),scale,fmt});
+const VL={count:vlSlider('vlCount',1,v=>v),
+          stretch:vlSlider('vlStretch',.01,v=>(v>0?'+':'')+v.toFixed(2)),
+          tilt:vlSlider('vlTilt',.1,v=>v.toFixed(1)),
+          width:vlSlider('vlWidth',1,v=>v+'¢'),
+          breath:vlSlider('vlBreath',.01,v=>Math.round(v*100)+'%'),
+          formantF:vlSlider('vlFormantF',1,v=>Math.round(v)+'Hz'),
+          formantA:vlSlider('vlFormantA',1,v=>v+'dB'),
+          attack:vlSlider('vlAttack',.01,v=>Math.round(v*1000)+'ms'),
+          decay:vlSlider('vlDecay',.01,v=>v?v.toFixed(2)+'s':'sustain'),
+          damping:vlSlider('vlDamping',.01,v=>Math.round(v*100)+'%'),
+          motion:vlSlider('vlMotion',1,v=>v+'¢'),
+          chiff:vlSlider('vlChiff',.01,v=>Math.round(v*100)+'%'),
+          strikeF:vlSlider('vlStrikeF',1,v=>'×'+v),
+          strikeT:vlSlider('vlStrikeT',.001,v=>Math.round(v*1000)+'ms')};
+function syncLab(){
+  for(const k in VL){VL[k].el.value=String(Math.round(labGen[k]/VL[k].scale));VL[k].v.textContent=VL[k].fmt(labGen[k]);}
+  vlSieve.value=labGen.sieve;
+  vlMatch.classList.toggle('on',labGen.match);
+  vlMatch.textContent='✨ Match tuning: '+(labGen.match?'on':'off');
+  vlPadOct.value=String(padOct);
+  drawLabSpec();
+}
+/* The genome, drawn: log-frequency axis, 5 octaves. Faint verticals = the
+   CURRENT tuning's step grid (octaves brighter); white floor ticks = pure
+   harmonics; colored bars = your partials (hue matches the note markers).
+   Stretch shows as bars drifting off the harmonic ticks; match shows as bars
+   snapping onto the grid; tilt is the height rolloff; width is the glow at
+   the fundamental. Bottom strip: the attack/decay envelope over ~2s. */
+function drawLabSpec(){
+  if(voiceLabPanel.hidden)return;
+  const c=vlSpec.getContext('2d'),dpr=Math.min(window.devicePixelRatio||1,3);
+  const W=vlSpec.clientWidth||191,H=vlSpec.clientHeight||86;
+  vlSpec.width=Math.round(W*dpr);vlSpec.height=Math.round(H*dpr);
+  c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,W,H);
+  const OCT=5,X=r=>4+Math.log2(r)/OCT*(W-8),sH=H-18,N=tunN();
+  for(let k=0;k<=2000;k++){                          // tuning grid (period boundaries brighter)
+    const kc=stepCents(k);if(kc>1200*OCT)break;
+    const oct=k%N===0;
+    c.strokeStyle=oct?'rgba(255,255,255,.28)':'rgba(140,170,255,'+(N>24?.08:.15)+')';
+    const x=X(Math.pow(2,kc/1200));
+    c.beginPath();c.moveTo(x,2);c.lineTo(x,sH);c.stroke();
+  }
+  c.fillStyle='rgba(255,255,255,.4)';                // pure-harmonic floor ticks
+  for(let k=1;k<=24;k++){const x=X(k);if(x<W-3)c.fillRect(x-.75,sH-5,1.5,5);}
+  if(labGen.breath>0){                               // breath = a noise haze over the floor
+    c.fillStyle='rgba(255,255,255,'+(labGen.breath*.3).toFixed(3)+')';
+    c.fillRect(4,sH-labGen.breath*55,W-8,labGen.breath*55);
+  }
+  const parts=genomePartials(labGen),damp=labGen.damping||0;
+  for(const [r,g] of parts){                         // partials: ghost = attack bloom, solid = sustain
+    if(r>Math.pow(2,OCT))continue;
+    const x=X(r),h=Math.pow(g,.7)*(sH-8),hue=(Math.log2(baseFreq()*r)*100)%360;
+    const hs=Math.pow(g/(1+damp*2.5*Math.max(0,r-1)),.7)*(sH-8);
+    if(labGen.width>0&&r<parts[0][0]*1.05&&r>parts[0][0]*.95){
+      c.fillStyle='hsl('+hue.toFixed(0)+' 80% 65%/.2)';
+      c.fillRect(x-1.5-labGen.width/6,sH-h,3+labGen.width/3,h);  // unison glow
+    }
+    c.fillStyle='hsl('+hue.toFixed(0)+' 80% 65%/.3)';
+    c.fillRect(x-1.25,sH-h,2.5,h);
+    c.fillStyle='hsl('+hue.toFixed(0)+' 80% 65%/.9)';
+    c.fillRect(x-1.25,sH-hs,2.5,hs);
+  }
+  if(labGen.chiff>0&&labGen.strikeF){                // strike = diamond at its color ratio, size ∝ amount
+    const sx=X(Math.min(31,labGen.strikeF)),sd=2+labGen.chiff*6;
+    c.fillStyle='rgba(255,255,255,.8)';
+    c.beginPath();c.moveTo(sx,6);c.lineTo(sx+sd,6+sd);c.lineTo(sx,6+2*sd);c.lineTo(sx-sd,6+sd);c.closePath();c.fill();
+  }
+  if(labGen.formantA>0){                             // formant = fixed-Hz resonance bump (vs the preview note)
+    const rf=labGen.formantF/(baseFreq()*2);
+    if(rf>1&&rf<Math.pow(2,OCT)){
+      const fx=X(rf);c.strokeStyle='rgba(255,200,120,.6)';c.lineWidth=1.2;
+      c.beginPath();
+      for(let i=-20;i<=20;i++){const yy=sH-(labGen.formantA/18)*(sH*.55)*Math.exp(-i*i/70);
+        i===-20?c.moveTo(fx+i*2,yy):c.lineTo(fx+i*2,yy);}
+      c.stroke();c.lineWidth=1;
+    }
+  }
+  const eY=H-2,eT=t=>4+Math.min(1,t/2)*(W-8);        // envelope strip (~2s window)
+  c.strokeStyle='rgba(255,255,255,.5)';c.fillStyle='rgba(255,255,255,.14)';
+  c.beginPath();c.moveTo(4,eY);
+  const aX=eT(Math.max(.004,labGen.attack));c.lineTo(aX,sH+4);
+  if(labGen.decay>0){for(let t=0;t<=1;t+=.05)
+    c.lineTo(eT(labGen.attack+t*2),sH+4+(eY-sH-4)*(1-Math.exp(-t*2/labGen.decay)));}
+  else c.lineTo(W-4,sH+4);
+  c.stroke();c.lineTo(W-4,eY);c.closePath();c.fill();
+}
+function labPreview(){
+  const v=makeVoice(baseFreq()*2,'lab');
+  setTimeout(()=>{releaseVoice(v,ctx.currentTime);setTimeout(()=>v.stop(),v.tail);},350);
+}
+/* audition strip: tap/drag along the Lab's right edge to hear the live
+   genome at different pitches — snapped to the current tuning's steps,
+   spanning 3 octaves bottom→top. Never records. */
+let vlPadVoice=null,vlPadStep=null,padOct=2;
+const padBase=()=>C3*Math.pow(2,padOct-3);           // strip's own bottom note (⚙-independent)
+function vlPadStop(quick){
+  if(!vlPadVoice)return;const v=vlPadVoice;vlPadVoice=null;vlPadStep=null;
+  // gliss handoffs damp FAST — letting every step's long release ring out
+  // stacks dozens of tails on a quick slide and crackles the limiter;
+  // a final lift keeps the voice's natural ring
+  releaseVoice(v,ctx.currentTime,quick?.03:v.rel);
+  setTimeout(()=>v.stop(),quick?250:v.tail);
+}
+function vlPadPlay(y){
+  const r=vlPad.getBoundingClientRect(),h=r.height||300;
+  const ny=Math.min(1,Math.max(0,1-(y-r.top)/h));
+  const st=Math.round(ny*3*tunN()),f=stepFreqFrom(padBase(),st);
+  if(vlPadVoice&&st===vlPadStep)return;
+  vlPadStop(true);vlPadStep=st;
+  vlPadVoice=makeVoice(f,'lab');
+  vlPadNote.textContent=noteName(f);
+  vlPadNote.style.top=Math.round(Math.max(10,Math.min(h-10,(1-ny)*h)))+'px';
+}
+vlPad.addEventListener('pointerdown',e=>{e.preventDefault();
+  try{vlPad.setPointerCapture(e.pointerId)}catch(_){}
+  vlPadPlay(e.clientY);});
+vlPad.addEventListener('pointermove',e=>{if(vlPadVoice)vlPadPlay(e.clientY);});
+vlPad.addEventListener('pointerup',()=>vlPadStop(false));
+vlPad.addEventListener('pointercancel',()=>vlPadStop(false));
+vlPadOct.onchange=()=>{const v=Math.round(+vlPadOct.value);
+  if(v>=1&&v<=6)padOct=v;saveQuantPrefs();};
+function labChanged(preview){
+  voiceKey='lab';voiceSel.value='lab';
+  saveQuantPrefs();syncLab();
+  if(preview)labPreview();
+}
+for(const k in VL){
+  VL[k].el.oninput=()=>{labGen[k]=(+VL[k].el.value)*VL[k].scale;labChanged(false);};
+  VL[k].el.onchange=()=>labPreview();               // audible preview on slider release
+}
+vlSieve.onchange=()=>{labGen.sieve=['all','odd','oct','3rd'].includes(vlSieve.value)?vlSieve.value:'all';labChanged(true);};
+vlMatch.onclick=()=>{labGen.match=!labGen.match;labChanged(true);};
+/* curated random — sample from musically-plausible distributions, not uniform
+   noise: struck vs sustained decides coherent attack/decay/chiff; optional
+   genes get a chance to be OFF so results have identity; match is preserved
+   (that's the user's tuning philosophy, not a slider) */
+function randomGen(){
+  const R=Math.random,pick=a=>a[Math.floor(R()*a.length)];
+  const struck=R()<.5;
+  return sanitizeGen({
+    count:2+Math.floor(R()*9),
+    stretch:R()<.2?-(R()*R()*.3):R()*R()*.5,
+    tilt:.5+R()*1.7,
+    sieve:pick(['all','all','all','odd','oct','3rd']),
+    width:R()<.4?0:2+Math.round(R()*14),
+    attack:struck?.002+R()*.02:.03+R()*.22,
+    decay:struck?.1+R()*1.1:0,
+    damping:R()*.9,
+    breath:R()<.5?0:R()*.35,
+    formantF:250*Math.pow(14,R()),
+    formantA:R()<.4?0:3+R()*11,
+    motion:R()<.5?0:2+Math.round(R()*8),
+    chiff:(struck?R()<.7:R()<.3)?R()*.6:0,
+    strikeF:Math.pow(2,R()*4)*1.2,                   // log-uniform ×1.2..×19 — thump to click
+    strikeT:struck?.004+R()*.03:.02+R()*.09,
+    match:labGen.match,
+  });
+}
+vlRandom.onclick=()=>{labGen=randomGen();labChanged(true);};
+function openLab(){
+  synthCfgPanel.hidden=true;
+  voiceLabPanel.hidden=false;
+  labChanged(true);renderVoiceLib();
+}
+voiceLabBtn.onclick=openLab;
+labToggle.onclick=()=>{voiceLabPanel.hidden?openLab():(voiceLabPanel.hidden=true);};
+vlClose.onclick=()=>{voiceLabPanel.hidden=true;};
+
+/* voice library: save the current genome under a name; tap = load into the
+   sliders + select it (further slider edits go back to the live Lab voice
+   until you re-Save); saved voices ride in prefs AND in song files */
+function renderPresets(){
+  vlPresets.innerHTML='';
+  LAB_PRESETS.forEach(pr=>{
+    const b=document.createElement('button');b.className='vl-preset';b.textContent=pr[0];
+    b.onclick=()=>{labGen=Object.assign({},pr[1]);voiceKey='lab';
+      saveQuantPrefs();syncLab();buildVoiceOptions();renderVoiceLib();labPreview();};
+    vlPresets.appendChild(b);
+  });
+}
+function renderVoiceLib(){
+  vlList.innerHTML='';
+  voiceLib.forEach(v=>{
+    const row=document.createElement('div');row.className='vl-vrow';
+    const pick=document.createElement('button');
+    pick.className='vl-pick'+(voiceKey==='v:'+v.name?' on':'');
+    pick.textContent=v.name;
+    pick.onclick=()=>{labGen=Object.assign({},v.gen);voiceKey='v:'+v.name;
+      saveQuantPrefs();syncLab();buildVoiceOptions();renderVoiceLib();labPreview();};
+    const del=document.createElement('button');del.className='vl-del';del.textContent='×';
+    del.onclick=()=>{if(!confirm('Delete voice "'+v.name+'"?'))return;
+      voiceLib=voiceLib.filter(x=>x!==v);
+      if(voiceKey==='v:'+v.name)voiceKey='lab';
+      saveQuantPrefs();buildVoiceOptions();renderVoiceLib();};
+    row.appendChild(pick);row.appendChild(del);vlList.appendChild(row);
+  });
+}
+vlSave.onclick=()=>{
+  let nm=(vlName.value||'').trim().slice(0,24);
+  if(!nm){let i=1;while(voiceLib.some(v=>v.name==='Voice '+i))i++;nm='Voice '+i;}
+  const ex=voiceLib.find(v=>v.name===nm);
+  if(ex)ex.gen=Object.assign({},labGen);             // re-save under the same name updates it
+  else voiceLib.push({name:nm,gen:Object.assign({},labGen)});
+  vlName.value='';voiceKey='v:'+nm;
+  saveQuantPrefs();buildVoiceOptions();renderVoiceLib();labPreview();
+};
+baseOctSel.onchange=()=>{const v=Math.round(+baseOctSel.value);
+  if(v>=1&&v<=5)baseOct=v;applyQuant();};
+voiceSel.onchange=()=>{const v=voiceSel.value;
+  if(v==='lab'||VOICES.hasOwnProperty(v)||(v.slice(0,2)==='v:'&&voiceLib.some(x=>'v:'+x.name===v)))voiceKey=v;
+  saveQuantPrefs();};
+hexSizeSel.onchange=()=>{const v=+hexSizeSel.value;
+  if([0.8,1,1.3,1.6].includes(v))hexScale=v;applyQuant();};
+edgeInsetSel.onchange=()=>{const v=Math.round(+edgeInsetSel.value);
+  if([0,24,40].includes(v))edgeInset=v;applyQuant();};
+const parseStepPref=(v)=>{if(v==='auto')return 'auto';
+  const n=Math.round(+v);return (n>=0&&n<=stepPrefMax())?n:'auto';};
+hexEastSel.onchange=()=>{hexEastPref=parseStepPref(hexEastSel.value);applyQuant();};
+hexNESel.onchange=()=>{hexNEPref=parseStepPref(hexNESel.value);applyQuant();};
+/* loop shape: measures per loop × beats per measure. Recorded events keep
+   their absolute beatPos — shrinking the loop lets long phrases spill into
+   later passes (they wrap), so switching back is non-destructive. */
+const LOOP_BARS=[1,2,4,8,12,16];
+function setLoopShape(ts,bars){
+  timeSig=ts;barsPerLoop=bars;beatsPerLoop=ts*bars;
+  timeSigSel.value=String(ts);barsSel.value=String(bars);
+  scrubSlider.max=beatsPerLoop;
+  if(+scrubSlider.value>=beatsPerLoop)scrubSlider.value=0;
+  initDots();
+  if(metOn&&tickTimer){stopMet();startMet();}
+  if(isPlay)reschedule();
+  saveQuantPrefs();
+}
+barsSel.onchange=()=>{const v=Math.round(+barsSel.value);
+  setLoopShape(timeSig,LOOP_BARS.includes(v)?v:barsPerLoop);};
+timeSigSel.onchange=()=>{const v=Math.round(+timeSigSel.value);
+  setLoopShape((v>=2&&v<=9)?v:timeSig,barsPerLoop);};
+
+/* ==== 🌐 TUNING EXPLORER — browse the whole Scala scale archive ====
+   5,399 tunings bundled statically in scala-db.json (build-scala-db.py) and
+   lazy-loaded on first open, so the synth itself boots without it and the
+   app makes zero web requests. Navigation is visual: a note-count histogram
+   picks a bin, facet dropdowns (family / period / intonation, each with live
+   match counts) narrow it, and every scale renders as a "pitch ring" — its
+   degrees placed around one period like a clock face, colored with the app's
+   pitch-hue formula (non-octave periods get a dashed ring). Tap a ring for
+   details — labeled ring, linear step ruler, an arpeggio preview with the
+   CURRENT voice — then adopt it as the live tuning. */
+const TX_BINS=(()=>{const b=[{label:'All',test:()=>true,n:12}];
+  for(let n=1;n<=30;n++)b.push({label:String(n),test:c=>c===n,n});
+  b.push({label:'31-40',test:c=>c>=31&&c<=40,n:31},{label:'41-60',test:c=>c>=41&&c<=60,n:41},
+         {label:'61-99',test:c=>c>=61&&c<=99,n:61},{label:'100+',test:c=>c>=100,n:100});
+  return b;})();
+/* facets beyond note count: family (build-time keyword tags), intonation and
+   period class (structural). Ints match build-scala-db.py's fam/into codes. */
+const TX_FAMS=[[-1,'All families'],[1,'Gamelan'],[6,'Greek & ancient'],[7,'Middle Eastern'],
+  [8,'Indian'],[9,'East & SE Asian'],[10,'Historical temp.'],[2,'Partch'],[3,'Bohlen–Pierce'],
+  [4,'Wilson / CPS'],[5,'Carlos'],[0,'Other']];
+const TX_INTOS=[[-1,'Any intonation'],[1,'Just ratios'],[0,'Tempered cents'],[2,'Mixed'],[3,'Equal-step']];
+const TX_PERS=[['all','Any period'],['oct','Octave'],['near','Stretched 8ve'],['tri','Tritave'],['other','Exotic period']];
+const TX_SORTS=[['name','A–Z'],['notes','Fewest notes'],['period','Smallest period']];
+const TX_FAMNAME={1:'gamelan',2:'Partch',3:'Bohlen–Pierce',4:'Wilson/CPS',5:'Carlos',
+  6:'Greek & ancient',7:'Middle Eastern',8:'Indian',9:'East & SE Asian',10:'historical temperament'};
+const TX_INTONAME={0:'tempered',1:'just intonation',2:'mixed just+tempered',3:'equal-step'};
+function periodClass(P){
+  if(Math.abs(P-1200)<=2)return 'oct';
+  if(P>1100&&P<1300)return 'near';                   // stretched/compressed octaves (gamelan, piano-like)
+  if(Math.abs(P-1901.955)<=15)return 'tri';          // Bohlen–Pierce and friends
+  return 'other';
+}
+let txDB=null,txSel={count:'All',fam:-1,into:-1,per:'all',sort:'name',q:''},
+    txItems=[],txCols=3,txCur=null,txSearchTimer=null;
+const txCells=new Map();
+const TX_CH=100;                                     // grid row height (ring + name)
+function parseDB(j){
+  if(!j||!Array.isArray(j.scales))return null;
+  const out=[];
+  j.scales.forEach(s=>{
+    if(!Array.isArray(s)||s.length<5||!Array.isArray(s[4])||!s[4].length)return;
+    const cents=s[4].map(Number);
+    if(cents.some(v=>!isFinite(v))||cents[cents.length-1]<=0)return;
+    out.push({name:String(s[0]),desc:String(s[1]),fam:+s[2]||0,into:+s[3]||0,
+      cents,pc:periodClass(cents[cents.length-1])});
+  });
+  return out.length?out:null;
+}
+function loadScalaDB(cb){
+  if(txDB){cb(true);return;}
+  if(window.SCALA_DB){txDB=parseDB(window.SCALA_DB);cb(!!txDB);return;}
+  if(typeof fetch!=='function'){cb(false);return;}
+  fetch('scala-db.json').then(r=>{if(!r.ok)throw new Error(r.status);return r.json();})
+    .then(j=>{window.SCALA_DB=j;txDB=parseDB(j);cb(!!txDB);})
+    .catch(()=>cb(false));
+}
+const hueOfCents=cc=>((Math.log2(C3)+cc/1200)*100)%360;  // C3-anchored — thumbnails stay stable
+/* the scale as a clock face: one period = one turn, root at 12 o'clock;
+   spokes+dots at every degree, hue from the app's pitch-hue formula. Equal
+   scales read as even star polygons, JI/gamelan as lopsided fingerprints. */
+function drawRing(cv,cents,px,detail){
+  const dpr=Math.min(window.devicePixelRatio||1,3);
+  cv.width=Math.round(px*dpr);cv.height=Math.round(px*dpr);
+  cv.style.width=px+'px';cv.style.height=px+'px';
+  const c=cv.getContext('2d');c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,px,px);
+  const N=cents.length,P=cents[N-1],R=px/2-(detail&&N<=24?22:5),cx=px/2,cy=px/2;  // labels need edge room
+  c.strokeStyle='rgba(255,255,255,.16)';c.lineWidth=1;
+  if(Math.abs(P-1200)>2)c.setLineDash([4,3]);        // non-octave period → dashed ring, visible in the grid
+  c.beginPath();c.arc(cx,cy,R,0,2*Math.PI);c.stroke();
+  c.setLineDash([]);
+  const degs=[0].concat(cents.slice(0,N-1));         // period ≡ root — drawn once at the top
+  const alpha=N>60?.4:.85,lw=N>60?1:(detail?1.8:1.4);
+  degs.forEach((dc,i)=>{
+    const a=dc/P*2*Math.PI-Math.PI/2,hue=hueOfCents(dc);
+    const ex=cx+R*Math.cos(a),ey=cy+R*Math.sin(a),r0=i===0?0:R*.55;
+    c.strokeStyle='hsl('+hue.toFixed(0)+' 80% 65%/'+alpha+')';c.lineWidth=i===0?lw+.8:lw;
+    c.beginPath();c.moveTo(cx+r0*Math.cos(a),cy+r0*Math.sin(a));c.lineTo(ex,ey);c.stroke();
+    c.fillStyle='hsl('+hue.toFixed(0)+' 85% 70%)';
+    c.beginPath();c.arc(ex,ey,i===0?(detail?4:2.4):(detail?2.8:1.7),0,2*Math.PI);c.fill();
+    if(detail&&N<=24){                               // cents labels just outside the ring
+      c.fillStyle='rgba(255,255,255,.75)';c.font='600 9px system-ui, sans-serif';
+      c.textAlign='center';c.textBaseline='middle';
+      c.fillText(String(Math.round(dc)),cx+(R+11)*Math.cos(a),cy+(R+11)*Math.sin(a));
+    }
+  });
+}
+function setTxStatus(msg,retry){
+  txStatus.innerHTML='';txStatus.style.display=msg?'flex':'none';
+  if(!msg)return;
+  const d=document.createElement('div');d.textContent=msg;txStatus.appendChild(d);
+  if(retry){const b=document.createElement('button');b.textContent='Retry';
+    b.onclick=openExplorer;txStatus.appendChild(b);}
+}
+/* does scale s pass every active filter, optionally ignoring one facet?
+   The skip form powers live per-option counts: each facet's dropdown counts
+   matches with every OTHER filter applied (classic faceted search). */
+function txMatch(s,skip){
+  if(skip!=='q'&&txSel.q&&
+     s.name.toLowerCase().indexOf(txSel.q)<0&&s.desc.toLowerCase().indexOf(txSel.q)<0)return false;
+  if(skip!=='fam'&&txSel.fam>=0&&s.fam!==txSel.fam)return false;
+  if(skip!=='into'&&txSel.into>=0&&s.into!==txSel.into)return false;
+  if(skip!=='per'&&txSel.per!=='all'&&s.pc!==txSel.per)return false;
+  if(skip!=='count'&&txSel.count!=='All'){
+    const b=TX_BINS.find(x=>x.label===txSel.count);
+    if(b&&!b.test(s.cents.length))return false;
+  }
+  return true;
+}
+function txTally(skip,get){                          // per-option counts with `skip` facet ignored
+  const m={_tot:0};
+  txDB.forEach(s=>{if(!txMatch(s,skip))return;m._tot++;const k=get(s);m[k]=(m[k]||0)+1;});
+  return m;
+}
+function txBuildSel(sel,defs,cur,cnt){
+  sel.innerHTML=defs.map(d=>'<option value="'+d[0]+'">'+d[1]+(cnt?' · '+cnt(d[0]):'')+'</option>').join('');
+  sel.value=String(cur);
+}
+/* the facet dropdowns live in #txChips — created once, options rebuilt with
+   live counts on every filter change */
+const txFamSel=document.createElement('select'),txPerSel=document.createElement('select'),
+      txIntoSel=document.createElement('select'),txSortSel=document.createElement('select');
+[txFamSel,txPerSel,txIntoSel,txSortSel].forEach(s=>{s.className='tx-sel';txChips.appendChild(s);});
+txFamSel.onchange=()=>{txSel.fam=+txFamSel.value;txRebuild();};
+txPerSel.onchange=()=>{txSel.per=String(txPerSel.value);txRebuild();};
+txIntoSel.onchange=()=>{txSel.into=+txIntoSel.value;txRebuild();};
+txSortSel.onchange=()=>{txSel.sort=String(txSortSel.value);txRebuild();};
+function txRebuild(){
+  if(!txDB)return;
+  setTxStatus('');
+  // note-count histogram (counts respect all other facets)
+  const counts=new Array(TX_BINS.length).fill(0);
+  txDB.forEach(s=>{if(!txMatch(s,'count'))return;
+    counts[0]++;const n=s.cents.length;
+    for(let i=1;i<TX_BINS.length;i++)if(TX_BINS[i].test(n)){counts[i]++;break;}});
+  if(txSel.count!=='All'){const cur=TX_BINS.findIndex(b=>b.label===txSel.count);
+    if(cur>0&&!counts[cur])txSel.count='All';}       // current bin filtered empty → fall back
+  const mx=Math.max(1,...counts.slice(1));
+  txHisto.innerHTML='';
+  TX_BINS.forEach((b,i)=>{
+    if(i>0&&!counts[i])return;
+    const el=document.createElement('button');
+    el.className='tx-bar'+(txSel.count===b.label?' on':'');
+    const h=i===0?46:Math.max(3,Math.round(Math.sqrt(counts[i]/mx)*46));
+    const hue=(Math.log2(b.n)*100)%360;
+    el.innerHTML='<i style="height:'+h+'px;background:hsl('+hue.toFixed(0)+' 70% '+(i===0?'40%':'55%')+
+      '/.85)"></i><b>'+b.label+'</b><u>'+(i===0?counts[0]:counts[i])+'</u>';
+    el.onclick=()=>{txSel.count=b.label;txRebuild();};
+    txHisto.appendChild(el);
+  });
+  // facet dropdowns with live counts
+  const famT=txTally('fam',s=>s.fam),perT=txTally('per',s=>s.pc),intoT=txTally('into',s=>s.into);
+  txBuildSel(txFamSel,TX_FAMS,txSel.fam,k=>k<0?famT._tot:(famT[k]||0));
+  txBuildSel(txPerSel,TX_PERS,txSel.per,k=>k==='all'?perT._tot:(perT[k]||0));
+  txBuildSel(txIntoSel,TX_INTOS,txSel.into,k=>k<0?intoT._tot:(intoT[k]||0));
+  txBuildSel(txSortSel,TX_SORTS,txSel.sort,null);
+  // the grid list, sorted
+  txItems=txDB.filter(s=>txMatch(s));
+  if(txSel.sort==='notes')txItems.sort((a,b)=>a.cents.length-b.cents.length||(a.name<b.name?-1:1));
+  else if(txSel.sort==='period')txItems.sort((a,b)=>
+    a.cents[a.cents.length-1]-b.cents[b.cents.length-1]||(a.name<b.name?-1:1));
+  txCount.textContent=txItems.length===txDB.length?txDB.length+' scales'
+    :txItems.length+' of '+txDB.length;
+  if(txGrid.scrollTop)txGrid.scrollTop=0;
+  txCells.forEach(el=>el.remove());txCells.clear();
+  txLayout();
+}
+function txLayout(){
+  const w=txGrid.clientWidth||320;
+  txCols=Math.max(2,Math.floor(w/88));
+  txPad.style.height=Math.ceil(txItems.length/txCols)*TX_CH+'px';
+  txRenderWindow();
+}
+/* windowed grid — only the visible rows (±2) exist as DOM; cells are drawn
+   once on creation and dropped when scrolled far away, so browsing all 5399
+   scales never holds more than ~40 canvases */
+function txRenderWindow(){
+  const top=txGrid.scrollTop||0,h=txGrid.clientHeight||420;
+  const r0=Math.max(0,Math.floor(top/TX_CH)-2),r1=Math.floor((top+h)/TX_CH)+2;
+  const lo=r0*txCols,hi=Math.min(txItems.length,(r1+1)*txCols);
+  txCells.forEach((el,i)=>{if(i<lo||i>=hi){el.remove();txCells.delete(i);}});
+  for(let i=lo;i<hi;i++){
+    if(txCells.has(i))continue;
+    const s=txItems[i],el=document.createElement('div');el.className='tx-cell';
+    el.style.left=(i%txCols)*(100/txCols)+'%';el.style.width=(100/txCols)+'%';
+    el.style.top=Math.floor(i/txCols)*TX_CH+'px';
+    const cv=document.createElement('canvas');
+    const nm=document.createElement('div');nm.className='tx-name';nm.textContent=s.name;
+    el.appendChild(cv);el.appendChild(nm);
+    el.onclick=()=>txOpenDetail(s);
+    txPad.appendChild(el);txCells.set(i,el);
+    drawRing(cv,s.cents,68,false);
+  }
+}
+txGrid.addEventListener('scroll',txRenderWindow);
+/* linear step ruler — one tick per degree across the period. Complements the
+   ring: evenness (or pelog's lopsidedness) reads at a glance left-to-right. */
+function drawRuler(cv,cents,wpx,hpx){
+  const dpr=Math.min(window.devicePixelRatio||1,3);
+  cv.width=Math.round(wpx*dpr);cv.height=Math.round(hpx*dpr);
+  cv.style.width=wpx+'px';cv.style.height=hpx+'px';
+  const c=cv.getContext('2d');c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,wpx,hpx);
+  const N=cents.length,P=cents[N-1];
+  c.fillStyle='rgba(255,255,255,.25)';c.fillRect(4,hpx-7,wpx-8,1);
+  [0].concat(cents).forEach((dc,i)=>{
+    const x=4+Math.min(1,Math.max(0,dc/P))*(wpx-8),edge=i===0||i===N;
+    c.fillStyle='hsl('+hueOfCents(dc).toFixed(0)+' 80% '+(edge?'75%':'65%')+')';
+    c.fillRect(x-(edge?1:.6),edge?3:9,edge?2:1.2,hpx-(edge?9:15));
+  });
+}
+function txOpenDetail(s){
+  txStopPreview();
+  txCur=s;txDetail.hidden=false;txGrid.style.display='none';
+  const w=(txDetail.clientWidth||260)-20;
+  drawRing(txDetCanvas,s.cents,Math.min(240,w),true);
+  drawRuler(txDetRuler,s.cents,Math.min(400,w),26);
+  txDetName.textContent=s.name;
+  txDetDesc.textContent=s.desc||'(no description)';
+  const P=s.cents[s.cents.length-1];
+  txDetMeta.textContent=s.cents.length+(s.cents.length===1?' note':' notes')+' · period '+(Math.round(P*100)/100)+'¢'+
+    (Math.abs(P-1200)<.02?' (octave)':'')+' · '+(TX_INTONAME[s.into]||'')+
+    (TX_FAMNAME[s.fam]?' · '+TX_FAMNAME[s.fam]:'');
+  txDetCents.textContent='0 · '+s.cents.map(v=>String(Math.round(v*10)/10)).join(' · ')+' ¢';
+}
+function txBackToGrid(){txStopPreview();txCur=null;txDetail.hidden=true;txGrid.style.display='';}
+/* arpeggio preview: strum the scale bottom→top with the CURRENT voice via
+   makeVoice directly — like the Lab audition strip, it can never record */
+let txPrevGen=0,txPrevVoices=[];
+function txStopPreview(){
+  txPrevGen++;
+  txPrevVoices.forEach(v=>{releaseVoice(v,ctx?ctx.currentTime:0,.05);setTimeout(()=>v.stop(),400);});
+  txPrevVoices=[];
+}
+function txPreview(){
+  if(!txCur)return;
+  txStopPreview();
+  const gen=++txPrevGen,base=C3*2;                   // strum from C4 regardless of ⚙ low-note
+  let degs=[0].concat(txCur.cents);
+  if(degs.length>17){                                // big scales: subsample, keep the period on top
+    const stride=Math.ceil((degs.length-1)/16),out=[];
+    for(let i=0;i<degs.length-1;i+=stride)out.push(degs[i]);
+    out.push(degs[degs.length-1]);degs=out;
+  }
+  degs.forEach((dc,i)=>{
+    setTimeout(()=>{
+      if(gen!==txPrevGen)return;
+      const g=curVoiceGen(),v=makeVoice(base*Math.pow(2,dc/1200),g?'lab':voiceKey,undefined,g);
+      txPrevVoices.push(v);
+      setTimeout(()=>{if(txPrevVoices.indexOf(v)>=0){txPrevVoices=txPrevVoices.filter(x=>x!==v);
+        releaseVoice(v,ctx.currentTime);setTimeout(()=>v.stop(),v.tail);}},280);
+    },i*170);
+  });
+}
+function txUseTuning(){
+  if(!txCur)return;
+  scl={name:txCur.name,cents:txCur.cents.slice()};
+  if(rootSemi>=tunN())rootSemi=0;
+  applyQuant();                                      // persists via saveQuantPrefs, redraws everything
+  closeExplorer();
+}
+function openExplorer(){
+  synthCfgPanel.hidden=true;
+  tunExplorer.hidden=false;
+  txDetail.hidden=true;txGrid.style.display='';
+  if(txDB){txRebuild();return;}
+  setTxStatus('Loading the Scala archive… (5,399 tunings, ~1 MB, bundled locally)');
+  loadScalaDB(ok=>{
+    if(tunExplorer.hidden)return;
+    if(!ok){setTxStatus('Could not load scala-db.json. On web this needs the server reachable once; on the app it ships in the bundle.',true);return;}
+    txRebuild();
+  });
+}
+function closeExplorer(){txStopPreview();tunExplorer.hidden=true;}
+tunExplorerBtn.onclick=openExplorer;
+txClose.onclick=closeExplorer;
+txBack.onclick=txBackToGrid;
+txHear.onclick=txPreview;
+txUse.onclick=txUseTuning;
+txRandom.onclick=()=>{
+  if(!txDB)return;
+  const pool=txItems.length?txItems:txDB;
+  txOpenDetail(pool[Math.floor(Math.random()*pool.length)]);
+};
+txSearch.oninput=()=>{
+  clearTimeout(txSearchTimer);
+  txSearchTimer=setTimeout(()=>{
+    txSel.q=String(txSearch.value||'').trim().toLowerCase();
+    if(!txDetail.hidden)txBackToGrid();
+    txRebuild();
+  },140);
+};
+window.addEventListener('resize',()=>{if(!tunExplorer.hidden&&txDB)txLayout();});
+
+/* ==== RECORDING HELPERS ==== */
+function record(ev){if(!isRec)return;const now=audio().currentTime;
+  if(loopAnchor===null)loopAnchor=now;
+  ev.beatPos=((((now-loopAnchor)*tempo/60)%beatsPerLoop)+beatsPerLoop)%beatsPerLoop;curRec.events.push(ev);}
+function updateBadge(){const n=recordings.filter(r=>r.active).length;badge.textContent=n;badge.classList.toggle('visible',n>0);}
+
+/* ==== SYNTH POINTER HANDLERS ==== */
+/* Releasing a voice mid-envelope (attack ramp still pending, or a struck
+   voice's long decay curve still in flight — e.g. Singing Bowl held-decay)
+   must pin the envelope at its EXACT current value before fading, or the
+   value jumps discontinuously = pop. Browsers' cancelAndHoldAtTime computes
+   that pin unreliably inside an active setTargetAtTime (Chrome/Android), so
+   we never ask it to: each voice carries its own analytic envelope (envAt)
+   and we pin the mathematically-known value ourselves. */
+function releaseVoice(v,at,tau){
+  if(v.released)return;v.released=true;
+  at=Math.max(at,(ctx?ctx.currentTime:0)+.003);    // same quantum-safety as voice starts
+  const gp=v.g.gain;
+  try{gp.cancelScheduledValues(at);gp.setValueAtTime(Math.max(.0001,v.envAt(at)),at);}catch(_){}
+  gp.setTargetAtTime(0,at,tau||v.rel||RELEASE);
+}
+/* ==== VOICES (instrument patches — pure oscillator recipes, no samples) ====
+   Each recorded note stamps its instrument (`inst` on the start event), so
+   tracks recorded with different voices layer correctly on playback. */
+/* Recipe fields: wave + lowpass + amp + partials [[freq ratio, gain]...];
+   atk = attack seconds (default 8ms), decay = held-note decay τ (plucked/
+   struck voices), rel = release τ (default RELEASE), tail = ms before the
+   oscillators stop after release (default OSC_TAIL — bells ring out longer).
+   Bell partials are INHARMONIC on purpose (2.76/5.40/8.93 ≈ real bell modes);
+   choir/brass/accordion use close-detuned unisons for width. */
+const VOICES={
+  sine:  {name:'Soft',     wave:'sine',    lp:5000, amp:.3,  partials:[[1,1]]},
+  tri:   {name:'Flute',    wave:'triangle',lp:4000, amp:.3,  partials:[[1,1]]},
+  saw:   {name:'Strings',  wave:'sawtooth',lp:2200, amp:.22, partials:[[1,1]]},
+  square:{name:'Retro',    wave:'square',  lp:1500, amp:.18, partials:[[1,1]]},
+  organ: {name:'Organ',    wave:'sine',    lp:6000, amp:.26, partials:[[1,1],[2,.5],[3,.25],[4,.12]]},
+  pluck: {name:'Pluck',    wave:'triangle',lp:3200, amp:.34, partials:[[1,1],[2,.3]], decay:.22},
+  bell:  {name:'Bell',     wave:'sine',    lp:8000, amp:.3,  partials:[[1,1],[2.76,.55],[5.40,.28],[8.93,.12]],
+          decay:.5, rel:.35, tail:2400},
+  choir: {name:'Choir',    wave:'triangle',lp:1300, amp:.3,  partials:[[1,1],[1.007,.85],[.993,.85],[2,.22]],
+          atk:.15, rel:.12, tail:700},
+  epiano:{name:'E-Piano',  wave:'sine',    lp:4500, amp:.3,  partials:[[1,1],[4,.22],[10,.07]], decay:.4, rel:.15, tail:900},
+  mbox:  {name:'Music Box',wave:'sine',    lp:7000, amp:.32, partials:[[1,1],[4,.35]], decay:.15, rel:.2, tail:1400},
+  bass:  {name:'Bass',     wave:'sawtooth',lp:900,  amp:.3,  partials:[[.5,1],[1,.35]]},
+  brass: {name:'Brass',    wave:'sawtooth',lp:3000, amp:.2,  partials:[[1,1],[1.004,.6]], atk:.05},
+  accordion:{name:'Accordion',wave:'square',lp:2500,amp:.15, partials:[[1,1],[1.005,.85],[2,.28]]},
+};
+let voiceKey='sine';
+
+/* ==== ⚗ VOICE LAB — the spectral genome ====
+   A genome doesn't list partials, it GENERATES them from musical rules:
+     count   how many partials survive
+     stretch partial k sits at ratio k^(1+s) — 0 = harmonic, + = bell-metallic
+     tilt    loudness rolloff 1/k^tilt — brightness in one number
+     sieve   which harmonics exist (all / odd=clarinet / octaves / every 3rd)
+     width   detuned unison copies of the fundamental, in cents
+     attack / decay  swell vs. struck
+     match   ✨ snap every partial to a power of the CURRENT EDO's step
+             (Sethares: consonance = timbre spectra aligning with the tuning,
+             so matched timbres make 13-EDO chords genuinely consonant)
+   Genomes are stamped onto recorded notes (ev.gen), so lab tracks replay
+   exactly — and re-render against the tuning if match is on. */
+let labGen={count:6,stretch:.12,tilt:1.2,sieve:'all',width:6,attack:.005,decay:.6,match:true};
+let voiceLib=[];                                     // saved genomes: [{name, gen}] — prefs + song file
+/* built-in genome presets — starting points sampling the space; loading one
+   fills the sliders (tweak + Save to keep a variant). P() spreads over a
+   NEUTRAL base so unset genes are truly off. */
+const P=o=>Object.assign({count:6,stretch:0,tilt:1,sieve:'all',width:0,attack:.005,decay:0,
+  match:false,breath:0,formantF:800,formantA:0,damping:0,motion:0,chiff:0,strikeF:8,strikeT:.02},o);
+const LAB_PRESETS=[
+  ['Gamelan',     P({stretch:.22,tilt:1.0,width:4,decay:.55,damping:.5,chiff:.15,strikeF:9,strikeT:.01,match:true})],
+  ['Singing Bowl',P({count:5,stretch:.28,tilt:.6,width:3,decay:1.5,damping:.2,match:true})],
+  ['Deep Gong',   P({count:9,stretch:.35,tilt:.8,decay:1.3,damping:.8,attack:.004,match:true})],
+  ['Kalimba',     P({count:3,stretch:.05,tilt:1.4,decay:.3,chiff:.3,strikeF:12,strikeT:.008,damping:.4})],
+  ['Rain Bells',  P({count:5,sieve:'3rd',stretch:.18,decay:.4,chiff:.2,strikeF:14,strikeT:.006,damping:.6,match:true})],
+  ['Wooden Flute',P({count:4,tilt:1.6,breath:.22,formantF:900,formantA:8,damping:.35,motion:5,attack:.06})],
+  ['Whistle',     P({count:1,breath:.3,motion:8,attack:.04,formantF:3000,formantA:6})],
+  ['Glass Choir', P({sieve:'oct',count:5,width:12,attack:.18,breath:.1,formantF:1200,formantA:6,motion:4})],
+  ['Dark Strings',P({count:8,tilt:1.1,width:14,breath:.12,attack:.12,damping:.3,formantF:700,formantA:5,motion:6})],
+  ['Reed Organ',  P({sieve:'odd',count:7,tilt:.9,breath:.08,formantF:1600,formantA:9})],
+  ['Alien Brass', P({count:6,stretch:-.12,tilt:.7,breath:.06,formantF:1200,formantA:10,attack:.05,motion:3,damping:.25})],
+  ['Sub Drone',   P({count:2,tilt:.5,width:10,breath:.05,motion:2,formantF:400,formantA:6})],
+  // percussion — pitched/modal drums (noise-dominant kit pieces live in Drums mode)
+  ['Timpani',     P({count:5,stretch:.3,tilt:1.3,attack:.003,decay:.5,damping:.7,breath:.08,chiff:.2,strikeF:2,strikeT:.04,formantF:300,formantA:6})],
+  ['Marimba',     P({count:3,sieve:'oct',tilt:.8,decay:.25,damping:.85,chiff:.35,strikeF:6,strikeT:.012,formantF:700,formantA:6})],
+  ['Woodblock',   P({count:2,stretch:.4,tilt:.6,decay:.09,damping:.5,chiff:.6,strikeF:10,strikeT:.008,formantF:1800,formantA:12})],
+  ['Steel Pan',   P({count:6,stretch:.08,tilt:.7,width:8,decay:.6,damping:.55,chiff:.25,strikeF:7,strikeT:.01,match:true})],
+  ['Taiko',       P({count:4,stretch:.35,tilt:1.6,decay:.35,damping:.8,breath:.25,chiff:.5,strikeF:1.5,strikeT:.05,formantF:200,formantA:10})],
+  ['Conga',       P({count:3,stretch:.25,tilt:1.2,decay:.18,damping:.6,breath:.15,chiff:.4,strikeF:4,strikeT:.02,formantF:500,formantA:8})],
+];
+function sanitizeGen(g){
+  const num=(v,lo,hi,d)=>(typeof v==='number'&&v>=lo&&v<=hi)?v:d;
+  g=(g&&typeof g==='object')?g:{};
+  return {count:Math.round(num(g.count,1,10,6)),stretch:num(g.stretch,-.3,.5,.12),
+    tilt:num(g.tilt,0,3,1.2),sieve:['all','odd','oct','3rd'].includes(g.sieve)?g.sieve:'all',
+    width:num(g.width,0,25,6),attack:num(g.attack,0,.3,.005),decay:num(g.decay,0,1.5,.6),match:!!g.match,
+    // v2 genes — all default 0/neutral, so v1 genomes sound bit-identical
+    breath:num(g.breath,0,.6,0),        // Source: noise/air mixed with the lines
+    formantF:num(g.formantF,200,4000,800),formantA:num(g.formantA,0,18,0),  // Body: fixed-Hz resonance
+    damping:num(g.damping,0,1,0),       // Time: spectral flux — high partials settle faster
+    motion:num(g.motion,0,20,0),        // Time: vibrato depth (cents, ~5Hz)
+    chiff:num(g.chiff,0,.8,0),          // Strike: exciter level
+    strikeF:num(g.strikeF,1,24,8),      // Strike: exciter color as a RATIO of the fundamental (pitch-tracked)
+    strikeT:num(g.strikeT,.003,.12,.02)};// Strike: exciter length — click vs thump vs scrape
+}
+function curVoiceGen(){                              // genome behind the current selection (null = builtin)
+  if(voiceKey==='lab')return labGen;
+  if(voiceKey.slice(0,2)==='v:'){const v=voiceLib.find(x=>'v:'+x.name===voiceKey);return v?v.gen:null;}
+  return null;
+}
+function genomePartials(gen){
+  const out=[];
+  for(let k=1;k<=32&&out.length<gen.count;k++){
+    if(gen.sieve==='odd'&&k%2===0)continue;
+    if(gen.sieve==='oct'&&(k&(k-1))!==0)continue;      // powers of two
+    if(gen.sieve==='3rd'&&k%3!==1)continue;            // 1,4,7,10…
+    let r=Math.pow(k,1+gen.stretch);
+    if(gen.match)r=Math.pow(2,stepCents(nearestStep(1200*Math.log2(r)))/1200);  // snap to the CURRENT tuning's steps
+    out.push([r,1/Math.pow(k,gen.tilt)]);
+  }
+  if(gen.width>0&&out.length){const c=Math.pow(2,gen.width/1200);
+    out.push([out[0][0]*c,out[0][1]*.7],[out[0][0]/c,out[0][1]*.7]);}
+  return out;
+}
+function labDef(gen){
+  const partials=genomePartials(gen);
+  const sum=partials.reduce((a,p)=>a+p[1],0)||1;
+  const rel=gen.decay>0?Math.min(.3,gen.decay):RELEASE;
+  return {name:'Lab',wave:'sine',lp:12000,amp:.3/Math.pow(sum,.7),partials,
+    atk:gen.attack>.002?gen.attack:.008,
+    decay:gen.decay>0?gen.decay:0,
+    rel:rel,
+    // the oscillators must outlive the release curve (~6τ ≈ −52dB), or the
+    // hard stop lands mid-fade and clicks — mid-decay genomes used to get
+    // cut at up to 37% amplitude by the fixed 300ms tail
+    tail:Math.max(OSC_TAIL,Math.round(rel*6000)+150),
+    breath:gen.breath||0,formantF:gen.formantF||800,formantA:gen.formantA||0,
+    damping:gen.damping||0,motion:gen.motion||0,chiff:gen.chiff||0,
+    strikeF:gen.strikeF||8,strikeT:gen.strikeT||.02};
+}
+function makeVoice(f,inst,at,gen){
+  // the +5ms safety keeps the start out of the already-rendered audio quantum —
+  // anchoring automation exactly at currentTime makes busy Android threads
+  // jump partway into the attack ramp instead of ramping (audible click)
+  const c=audio(),t=Math.max(at||0,c.currentTime+.005);
+  const def=inst==='lab'?labDef(gen||labGen):(VOICES[inst]||VOICES.sine);
+  const g=c.createGain(),flt=c.createBiquadFilter();
+  flt.type='lowpass';flt.frequency.value=def.lp;
+  const atk=def.atk||.008;
+  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(def.amp,t+atk);    // soft attack — no onset click
+  if(def.decay)g.gain.setTargetAtTime(.001,t+atk+.004,def.decay);              // plucked/struck voices decay while held
+  const parts=def.partials.filter(pr=>f*pr[0]<14000);                          // drop partials past ~Nyquist
+  if(!parts.length)parts.push(def.partials[0]);
+  const ogs=[],extra=[];
+  const oscs=parts.map(pr=>{
+    const o=c.createOscillator(),og=c.createGain();
+    o.type=def.wave;o.frequency.value=f*pr[0];og.gain.value=pr[1];
+    o.connect(og);og.connect(flt);o.start(t);ogs.push(og);return o;});
+  // TIME/damping — spectral flux: high partials bloom then settle toward a
+  // duller sustain, faster the higher they sit (how physical objects behave)
+  if(def.damping){parts.forEach((pr,i)=>{const r=pr[0];if(r<=1.01)return;
+    ogs[i].gain.setValueAtTime(pr[1],t);
+    ogs[i].gain.setTargetAtTime(pr[1]/(1+def.damping*2.5*(r-1)),t+atk,.45/(1+def.damping*3*(r-1)));});}
+  // SOURCE/breath — looped noise band riding the voice envelope
+  if(def.breath){const n=c.createBufferSource();n.buffer=noise();n.loop=true;
+    const bp=c.createBiquadFilter();bp.type='bandpass';
+    bp.frequency.value=Math.min(9000,f*2.5);bp.Q.value=1.1;
+    const ng=c.createGain();ng.gain.value=def.breath*.55;
+    n.connect(bp);bp.connect(ng);ng.connect(flt);n.start(t);extra.push(n);}
+  // TIME/motion — one shared ~5Hz vibrato LFO nudging every partial
+  if(def.motion){const lfo=c.createOscillator(),lg=c.createGain();
+    lfo.frequency.value=5;lg.gain.value=f*(Math.pow(2,def.motion/1200)-1);
+    lfo.connect(lg);oscs.forEach(o=>lg.connect(o.frequency));lfo.start(t);extra.push(lfo);}
+  // STRIKE — the exciter. Routed THROUGH the voice chain (lowpass → formant →
+  // envelope) and pitched relative to the note, so it composes with the rest
+  // of the genome instead of being pasted on top.
+  if(def.chiff){
+    const n=c.createBufferSource();n.buffer=noise();
+    const bp=c.createBiquadFilter();bp.type='bandpass';
+    bp.frequency.value=Math.min(12000,f*(def.strikeF||8));bp.Q.value=.9;
+    const sT=def.strikeT||.02,cg=c.createGain();
+    cg.gain.setValueAtTime(def.chiff*2*(sT<.015?1.5:1),t);      // short clicks need level to register
+    cg.gain.setTargetAtTime(.0001,t+.002,sT);
+    n.connect(bp);bp.connect(cg);cg.connect(flt);
+    n.start(t);n.stop(t+Math.min(.6,sT*6+.05));
+  }
+  // BODY/formant — a fixed-Hz resonance the pitch moves through
+  let out=flt;
+  if(def.formantA){const pk=c.createBiquadFilter();pk.type='peaking';
+    pk.frequency.value=def.formantF;pk.Q.value=2;pk.gain.value=def.formantA;
+    flt.connect(pk);out=pk;}
+  out.connect(g);g.connect(vout());
+  const aEnd=t+atk;
+  return {oscs,g,rel:def.rel||RELEASE,tail:def.tail||OSC_TAIL,
+    envAt(x){                                        // analytic master-envelope value at time x
+      if(x<=t)return 0;
+      if(x<aEnd)return def.amp*(x-t)/atk;
+      if(def.decay)return .001+(def.amp-.001)*Math.exp(-Math.max(0,x-aEnd-.004)/def.decay);
+      return def.amp;
+    },
+    setFreq(nf,when){oscs.forEach((o,i)=>o.frequency.setTargetAtTime(nf*parts[i][0],when,.01));},
+    stop(){oscs.concat(extra).forEach(o=>{try{o.stop()}catch(_){}});}};
+}
+function startVoice(pid,f,name,mx,my,nx,ny){
+  const gen=curVoiceGen();
+  voiceDest=(isRec&&curRec)?trackOut(curRec.id):null;  // live monitor at the take's own volume
+  const v=makeVoice(f,gen?'lab':voiceKey,undefined,gen);
+  voiceDest=null;
+  const col=`hsl(${(Math.log2(f)*100)%360} 80% 60%/.8)`,
+        m=marker('note-marker',mx,my,col,name),id='n'+nextNoteId++;
+  touches.set(pid,{id,v,m});
+  const ev={type:'start',id,nx,ny,f,name,inst:gen?'lab':voiceKey};
+  if(gen)ev.gen=Object.assign({},gen);                   // snapshot the genome onto the note
+  record(ev);
+  return touches.get(pid);
+}
+function synthStart(pid,x,y){
+  if(touches.has(pid))synthEnd(pid);
+  const w=pad.clientWidth,h=pad.clientHeight,q=pitchAt(x/w,1-y/h);
+  startVoice(pid,q.f,noteName(q.f),q.nx*w,(1-q.ny)*h,q.nx,q.ny);
+}
+/* hex keys: discrete pitches; dragging onto a new key retriggers (gliss) */
+const hexClampXY=(x,y,L)=>({x:Math.min(L.x1-L.rx,Math.max(L.x0+L.rx,x)),y:Math.min(L.oy,Math.max(L.s,y))});
+// The nearest lattice key to a gutter tap can be one of the CULLED
+// (undrawn) edge keys — and the cull boundary staggers with each row, so
+// phantom hits would shift row by row. Snap into the drawn range instead,
+// mirroring drawHexGrid's bounds exactly.
+function hexSnapDrawn(q,r,L){
+  const rTop=Math.floor((L.oy-(L.s-1))/(1.5*L.s));
+  r=Math.max(0,Math.min(rTop,r));
+  const qMin=Math.ceil((L.x0+L.rx-1-L.ox)/(Math.sqrt(3)*L.s)-r/2);
+  const qMax=Math.floor((L.x1-L.rx+1-L.ox)/(Math.sqrt(3)*L.s)-r/2);
+  return {q:Math.max(qMin,Math.min(qMax,q)),r};
+}
+function hexStart(pid,x,y){
+  if(touches.has(pid))synthEnd(pid);
+  if(!hexLayout||hexLayout.h!==pad.clientHeight||hexLayout.w!==pad.clientWidth)drawHexGrid();  // self-heal on size change
+  const L=hexLayout,c0=hexClampXY(x,y,L),h0=hexFromXY(c0.x,c0.y,L),{q,r}=hexSnapDrawn(h0.q,h0.r,L);
+  const st=hexStepOf(q,r),f=stepFreq(st);
+  const p=hexCenter(q,r,L),w=pad.clientWidth,h=pad.clientHeight;
+  const t=startVoice(pid,f,noteName(f),p.x,p.y,p.x/w,1-p.y/h);
+  t.hexQ=q;t.hexR=r;
+}
+function hexMove(pid,x,y){
+  const t=touches.get(pid);if(!t)return;
+  const L=hexLayout,c0=hexClampXY(x,y,L),h0=hexFromXY(c0.x,c0.y,L),{q,r}=hexSnapDrawn(h0.q,h0.r,L);
+  if(q===t.hexQ&&r===t.hexR)return;
+  synthEnd(pid);hexStart(pid,x,y);
+}
+function synthMove(pid,x,y){
+  const t=touches.get(pid);if(!t)return;
+  const w=pad.clientWidth,h=pad.clientHeight,q=pitchAt(x/w,1-y/h),f=q.f,name=noteName(f),
+        col=`hsl(${(Math.log2(f)*100)%360} 80% 60%/.8)`;
+  t.v.setFreq(f,ctx.currentTime);
+  Object.assign(t.m.style,{left:q.nx*w+'px',top:(1-q.ny)*h+'px',background:col});t.m.textContent=name;
+  // record at most one update per 25ms per note. Live sound + marker stay
+  // full-rate above; only the take is thinned. Pixel-class screens fire
+  // touchmove at 120Hz, and every recorded update becomes a timer plus an
+  // automation event on EVERY later loop pass — that scheduling load on a
+  // phone's main thread is exactly what starves the audio thread into
+  // crackles. setFreq's 10ms smoothing makes 40Hz replay indistinguishable.
+  if(t.lastUpd!==undefined&&ctx.currentTime-t.lastUpd<.025)return;
+  t.lastUpd=ctx.currentTime;
+  record({type:'update',id:t.id,nx:q.nx,ny:q.ny,f,name});
+}
+function synthEnd(pid){
+  const t=touches.get(pid);if(!t)return;
+  releaseVoice(t.v,ctx.currentTime);t.m.style.opacity='0';t.m.style.transition=`opacity ${RELEASE}s`;
+  setTimeout(()=>t.m.remove(),MARKER_FADE);
+  setTimeout(()=>t.v.stop(),t.v.tail);touches.delete(pid);record({type:'end',id:t.id});
+}
+
+/* ==== DRUM HIT ==== */
+function hitDrum(x,y,playback=false){
+  const w=pad.clientWidth,h=pad.clientHeight;
+  const nx=x/w, gy=1-y/h;                                 // gy 0(bottom)->1(top)
+  const col=Math.min(COLS-1,Math.max(0,Math.floor(nx*COLS)));
+  const row=Math.min(ROWS-1,Math.max(0,Math.floor(gy*ROWS)));
+  const kind=rowInstruments[row][col];
+  const localP=Math.min(1,Math.max(0,(gy*ROWS)-row));      // 0..1 inside row
+  voiceDest=(!playback&&isRec&&curRec)?trackOut(curRec.id):voiceDest;
+  try{drumMap[kind](localP);}finally{voiceDest=null;}
+  showHit(kind,x,y,playback);
+  return {kind,row,col,x:nx,gy,localP};
+}
+
+/* ==== POINTER DISPATCH ==== */
+function startNote(pid,x,y){
+  if(instrument==='drums'){record({type:'drum',...hitDrum(x,y,false)});return;}
+  instrument==='hex'?hexStart(pid,x,y):synthStart(pid,x,y);
+}
+function moveNote(pid,x,y){
+  if(instrument==='hex')hexMove(pid,x,y);else if(instrument==='synth')synthMove(pid,x,y);
+}
+function endNote(pid){if(instrument!=='drums')synthEnd(pid);}
+
+/* ==== RECORDINGS UI ==== */
+function addRow(r){
+  const row=document.createElement('div');row.className='recording-item';row.id='rec-'+r.id;
+  row.innerHTML=`<div class="recording-name"></div>
+  <div class="recording-controls"><button title="mute / unmute"></button><button title="delete">×</button></div>`;
+  row.querySelector('.recording-name').textContent=r.name;
+  const [tog,del]=row.querySelectorAll('button');
+  row.classList.toggle('active',r.active);
+  tog.textContent=r.active?'🔊':'🔇';
+  recordingsList.appendChild(row);
+  // the toggle is a MUTE button: it never starts or stops the transport, and
+  // it applies immediately mid-cycle (unmute joins the current pass, mute
+  // cancels this pass's pending notes and fades anything sounding)
+  tog.onclick=()=>{r.active=!r.active;row.classList.toggle('active',r.active);
+    tog.textContent=r.active?'🔊':'🔇';updateBadge();
+    if(isPlay){reschedule();if(!r.active)killTrackNotes(r.id);}};
+  del.onclick=()=>{
+    if(!confirm('Delete '+r.name+'?'))return;
+    if(r===curRec){isRec=false;curRec=null;recordBtn.classList.remove('active');
+      recordBtn.textContent='Rec';scrubSlider.disabled=false;}
+    recordings=recordings.filter(a=>a!==r);row.remove();updateBadge();
+    killTrackNotes(r.id);dropTrackGain(r.id);
+    if(!recordings.some(a=>a.active))stopPlayback();else if(isPlay)reschedule();};
+  // per-track volume — drives the track's GainNode live (playback AND the
+  // overdub monitor), persisted in the song file. createElement, not
+  // innerHTML: the node test harness only parses div/button from markup.
+  const vol=document.createElement('input');
+  vol.type='range';vol.min='0';vol.max='100';vol.className='rec-vol';vol.title='track volume';
+  vol.value=String(Math.round((typeof r.gain==='number'?r.gain:1)*100));
+  vol.oninput=()=>setTrackGain(r,(+vol.value||0)/100);
+  row.appendChild(vol);
+}
+
+/* ==== RECORD CONTROL ==== */
+function startRecording(){
+  const c=audio();
+  // Rec implies Play: with existing active tracks, start the loop so the
+  // overdub is heard in context (playback engages FIRST so the recorder
+  // joins its grid instead of re-anchoring).
+  if(!isPlay&&recordings.some(r=>r.active))startPlayback();
+  // Anchor the loop at the Rec press (metronome NOT required) — beat 0 is the
+  // press itself, so off-beat/pickup starts land where they were played. A
+  // grid already running (met ticking or tracks playing) keeps its anchor.
+  if(loopAnchor===null||(!tickTimer&&!isPlay))loopAnchor=c.currentTime;
+  const r={id:recSeq++,name:'Track '+(recSeq-1),events:[],active:false,gain:1};
+  recordings.push(r);curRec=r;isRec=true;addRow(r);
+  recordBtn.classList.add('active');recordBtn.textContent='Rec*';scrubSlider.disabled=true;
+  if(metOn&&!tickTimer)startMet();
+  startTicker();
+}
+function stopRecording(autoPlay){
+  if(!isRec)return;
+  // close out any notes still held so playback never loops an endless oscillator
+  touches.forEach(t=>{if(curRec.events.some(e=>e.type==='start'&&e.id===t.id))record({type:'end',id:t.id});});
+  isRec=false;recordBtn.classList.remove('active');recordBtn.textContent='Rec';scrubSlider.disabled=false;
+  if(!curRec.events.length){recordings=recordings.filter(a=>a!==curRec);$('rec-'+curRec.id)?.remove();}
+  else{curRec.active=true;const row=$('rec-'+curRec.id);
+    if(row){row.classList.add('active');row.querySelector('button').textContent='🔊';}}
+  updateBadge();if(autoPlay!==false&&curRec.active&&!isPlay)startPlayback(true);curRec=null;
+  if(tickTimer&&!isPlay)stopMet();                 // no session left → pause the ticking
+}
+
+/* ==== PLAYBACK ==== */
+function fadeNote(n,at){
+  releaseVoice(n.v,at);n.m.style.opacity='0';n.m.style.transition=`opacity ${RELEASE}s`;
+  const c=audio();
+  setTimeout(()=>n.m.remove(),Math.max(0,(at-c.currentTime)*1000)+MARKER_FADE);
+  setTimeout(()=>n.v.stop(),Math.max(0,(at-c.currentTime)*1000)+n.v.tail);
+}
+function killTrackNotes(rid){
+  playNotes.forEach((n,key)=>{if(key.indexOf(rid+'_')===0){fadeNote(n,audio().currentTime);playNotes.delete(key);}});
+}
+function dispatch(rid,ev,when){
+  const c=audio(),at=Math.max(when||c.currentTime,c.currentTime+.005);   // schedule on the audio clock, not timer-fire time
+  if(ev.type==='drum'){
+    const x=ev.x*pad.clientWidth,y=(1-ev.gy)*pad.clientHeight,fn=drumMap[ev.kind];
+    voiceDest=trackOut(rid);
+    try{if(fn)fn(ev.localP,at);}finally{voiceDest=null;}
+    showHit(ev.kind,x,y,true);return;
+  }
+  const key=rid+'_'+ev.id;
+  if(ev.type==='start'){
+    const old=playNotes.get(key);if(old){fadeNote(old,c.currentTime);playNotes.delete(key);}
+    const x=ev.nx*pad.clientWidth,y=(1-ev.ny)*pad.clientHeight;
+    voiceDest=trackOut(rid);
+    let v;try{v=makeVoice(ev.f,ev.inst||'sine',at,ev.gen);}finally{voiceDest=null;}  // replay with the recorded voice, at the track's volume
+    const m=marker('playback-marker',x,y,'rgba(255,255,0,.25)',ev.name);
+    playNotes.set(key,{v,m});
+  }else if(ev.type==='update'){
+    const n=playNotes.get(key);if(!n)return;
+    const x=ev.nx*pad.clientWidth,y=(1-ev.ny)*pad.clientHeight;
+    n.v.setFreq(ev.f,at);Object.assign(n.m.style,{left:x+'px',top:y+'px'});n.m.textContent=ev.name;
+  }else{
+    const n=playNotes.get(key);if(!n)return;
+    fadeNote(n,at);playNotes.delete(key);
+  }
+}
+function scheduleCycle(gen,n){
+  if(gen!==playGen)return;
+  const c=audio(),loop=60/tempo*beatsPerLoop,cycleStart=playOrigin+n*loop,now=c.currentTime;
+  recordings.filter(r=>r.active).forEach(r=>r.events.forEach(ev=>{
+    const when=cycleStart+ev.beatPos*60/tempo;
+    if(when<now-.03)return;                                  // already in the past (mid-cycle start / throttled tab)
+    playTimers.push(setTimeout(()=>{if(gen===playGen)dispatch(r.id,ev,when);},Math.max(0,(when-now)*1000-40)));
+  }));
+  cycleTimer=setTimeout(()=>scheduleCycle(gen,n+1),Math.max(0,(cycleStart+loop-now)*1000));
+}
+function reschedule(){                                       // (re)build the timer chain from the current loop position
+  playGen++;playTimers.forEach(clearTimeout);playTimers=[];clearTimeout(cycleTimer);
+  const c=audio(),loop=60/tempo*beatsPerLoop;
+  playOrigin=loopAnchor+Math.floor(Math.max(0,c.currentTime-loopAnchor)/loop)*loop;
+  scheduleCycle(playGen,0);
+}
+function startPlayback(fromTop){
+  if(isRec){stopRecording(false);fromTop=true;}    // finishing a take always replays from the top
+  if(isPlay)return;
+  // no active tracks is fine — the transport still rolls (ticker, scrubber,
+  // and the metronome if armed) so you can jam to a click before recording
+  const c=audio();
+  if(loopAnchor===null||!tickTimer){               // no metronome running → start from the scrubber playhead
+    const b=fromTop?0:Math.min(beatsPerLoop-.001,Math.max(0,+scrubSlider.value||0));
+    loopAnchor=c.currentTime+.02-b*60/tempo;
+  }
+  isPlay=true;playBtn.classList.add('active');playBtn.textContent='Playing';
+  reschedule();if(metOn&&!tickTimer)startMet();startTicker();
+}
+function stopPlayback(){
+  if(!isPlay)return;isPlay=false;playGen++;playBtn.classList.remove('active');playBtn.textContent='Play';
+  playTimers.forEach(clearTimeout);playTimers=[];clearTimeout(cycleTimer);cycleTimer=null;
+  playNotes.forEach(n=>fadeNote(n,ctx.currentTime));playNotes.clear();
+  if(tickTimer&&!isRec)stopMet();                  // session over — met mode stays armed, ticking pauses
+}
+
+/* ==== METRONOME ==== */
+let dotStride=1;                     // long loops show one dot per MEASURE so the strip fits a phone
+function initDots(){
+  dotStride=beatsPerLoop>48?timeSig:1;
+  const n=Math.ceil(beatsPerLoop/dotStride);
+  beatIndicator.style.gap=n>32?'2px':'4px';
+  beatIndicator.innerHTML='';
+  for(let i=0;i<n;i++){const d=document.createElement('div');
+    d.className='beat-marker'+((dotStride>1||i%timeSig===0)?' accent':'');beatIndicator.appendChild(d);}
+}
+function flash(i){const idx=i<0?-1:Math.floor(i/dotStride);
+  [...beatIndicator.children].forEach((d,k)=>d.classList.toggle('active',k===idx));}
+function calcGrid(){return 60/tempo;}
+function updateCounter(){barCounter.textContent=`${bar+1}.${beat+1}`;}
+function scheduleBeat(gen){
+  if(gen!==metGen)return;const c=audio();
+  if(nextBeat<c.currentTime-.05){                    // tab was throttled: skip the missed beats instead of burst-firing them
+    const grid=calcGrid(),ahead=Math.ceil((c.currentTime+.02-loopAnchor)/grid);
+    nextBeat=loopAnchor+ahead*grid;
+    const q=((ahead%beatsPerLoop)+beatsPerLoop)%beatsPerLoop;beat=q%timeSig;bar=Math.floor(q/timeSig);
+  }
+  const accent=!beat;
+  // enveloped tick — a raw sine hard-stopped mid-waveform pops; decay to
+  // silence before the stop so there is no discontinuity. metVol scales the
+  // levels (its own "track" volume); at zero skip the osc entirely — an
+  // exponential ramp can't start from 0 and the visuals should still run.
+  if(metVol>.001){
+    const o=c.createOscillator(),g=c.createGain();o.frequency.value=accent?1000:800;
+    g.gain.setValueAtTime((accent?.15:.09)*metVol,nextBeat);g.gain.exponentialRampToValueAtTime(.0005,nextBeat+.045);
+    o.connect(g);g.connect(c.destination);o.start(nextBeat);o.stop(nextBeat+.055);  // met stays off the limiter bus
+  }
+  // capture THIS beat's position — the globals advance to the next beat below,
+  // and reading them in the timer callback made the display lead by one.
+  // gen-guarded: a queued flash from a chain that was stopped mid-flight
+  // (scrub, tempo change) must not paint a stale beat.
+  const vb=bar*timeSig+beat,vt=(bar+1)+'.'+(beat+1);
+  setTimeout(()=>{if(gen!==metGen)return;
+    metLight.classList.add('active');setTimeout(()=>metLight.classList.remove('active'),80);
+    flash(vb);barCounter.textContent=vt;},Math.max(0,(nextBeat-c.currentTime)*1000-5));
+  beat=(beat+1)%timeSig;if(!beat){bar=(bar+1)%barsPerLoop;}
+  nextBeat+=calcGrid();tickTimer=setTimeout(()=>scheduleBeat(gen),(nextBeat-c.currentTime-.005)*1000);}
+function startMet(){
+  // the met is a MODE: it only ticks during a play/record session, deriving
+  // its grid from the same loopAnchor so it's always locked to the loop
+  if(!metOn||(!isPlay&&!isRec))return;
+  const c=audio();if(loopAnchor===null)loopAnchor=c.currentTime+.02;
+  metGen++;const grid=calcGrid(),req=c.currentTime+.02;
+  const ahead=Math.ceil((req-loopAnchor)/grid);nextBeat=loopAnchor+ahead*grid;
+  const q=((ahead%beatsPerLoop)+beatsPerLoop)%beatsPerLoop;beat=q%timeSig;bar=Math.floor(q/timeSig);
+  flash(bar*timeSig+beat);updateCounter();scheduleBeat(metGen);}
+function stopMet(){metGen++;clearTimeout(tickTimer);tickTimer=null;
+  [...beatIndicator.children].forEach(d=>d.classList.remove('active'));}
+
+/* ==== LOOP POSITION TICKER (drives the scrubber + the dots when the met isn't) ==== */
+let posTimer=null;
+function loopPos(){return ((((audio().currentTime-loopAnchor)*tempo/60)%beatsPerLoop)+beatsPerLoop)%beatsPerLoop;}
+function tickPos(){
+  if(!isRec&&!isPlay){flash(-1);posTimer=null;return;}
+  if(loopAnchor!==null){
+    const pos=loopPos();
+    if(!scrubHeld)scrubSlider.value=pos;   // don't fight the user's thumb mid-drag
+    if(!tickTimer){const b=Math.floor(pos);beat=b%timeSig;bar=Math.floor(b/timeSig);flash(b);updateCounter();}
+  }
+  posTimer=setTimeout(tickPos,80);
+}
+function startTicker(){if(posTimer===null)tickPos();}
+
+/* ==== TIME SCRUBBER ====
+   The slider IS the playhead: dragging shifts loopAnchor so "now" sits at the
+   chosen beat — playback, metronome and dots all move coherently with it. */
+function scrubTo(b){
+  if(isRec)return;                          // scrubbing mid-take would rewrite recorded positions
+  const c=audio();
+  loopAnchor=c.currentTime-b*60/tempo;
+  playNotes.forEach(n=>fadeNote(n,c.currentTime));playNotes.clear();
+  if(isPlay)reschedule();
+  if(tickTimer){stopMet();startMet();}      // startMet re-derives beat/bar and owns them from here —
+  else{                                     // clobbering them after it desynced the accents/counter
+    const bi=Math.floor(b);beat=bi%timeSig;bar=Math.floor(bi/timeSig);flash(bi);updateCounter();
+  }
+}
+scrubSlider.oninput=e=>scrubTo(Math.min(beatsPerLoop-.001,Math.max(0,+e.target.value||0)));
+/* while the finger is on the scrubber, the 80ms position ticker must not
+   overwrite the slider value — it made the thumb snap away mid-drag */
+let scrubHeld=false;
+['pointerdown','touchstart'].forEach(ev=>scrubSlider.addEventListener(ev,()=>{scrubHeld=true;}));
+['pointerup','pointercancel','touchend','touchcancel'].forEach(ev=>scrubSlider.addEventListener(ev,()=>{scrubHeld=false;}));
+scrubSlider.onchange=()=>{scrubHeld=false;};
+
+/* ==== UI LISTENERS ==== */
+tempoSlider.oninput=e=>{
+  // hold the playhead still through the change: loopPos is (now-anchor)·tempo,
+  // so a fixed anchor would teleport the position by the tempo ratio mid-play
+  const pos=((isPlay||isRec)&&loopAnchor!==null)?loopPos():null;
+  tempo=+e.target.value;tempoValue.textContent=tempo+' BPM';
+  if(pos!==null)loopAnchor=audio().currentTime-pos*60/tempo;
+  if(metOn){stopMet();startMet();}if(isPlay)reschedule();};
+/* the metronome is presented as a pinned pseudo-track: a row in the
+   Recordings panel with the same mute toggle + volume slider as real tracks.
+   It follows the transport exactly like a track (only ticks while playing or
+   recording); metOn is its mute state, metVol its volume (a pref, not song
+   data). The Met button in the control strip is a shortcut to the same
+   toggle — both stay in sync through syncMetUI(). */
+const metRowEl=$('metRow');
+metRowEl.className='recording-item';
+const metRowName=document.createElement('div');
+metRowName.className='recording-name';metRowName.textContent='Metronome';
+const metRowCtl=document.createElement('div');metRowCtl.className='recording-controls';
+const metRowTog=document.createElement('button');metRowTog.title='metronome on / off';
+metRowCtl.appendChild(metRowTog);
+const metRowVol=document.createElement('input');
+metRowVol.type='range';metRowVol.min='0';metRowVol.max='100';metRowVol.className='rec-vol';metRowVol.title='metronome volume';
+metRowEl.appendChild(metRowName);metRowEl.appendChild(metRowCtl);metRowEl.appendChild(metRowVol);
+function syncMetUI(){
+  metBtn.textContent=metOn?'Met:On':'Met:Off';
+  metRowTog.textContent=metOn?'🔊':'🔇';
+  metRowEl.classList.toggle('active',metOn);
+  metRowVol.value=String(Math.round(metVol*100));
+}
+function toggleMet(){
+  metOn=!metOn;syncMetUI();
+  if(!metOn){stopMet();return;}
+  if(!isPlay&&recordings.some(r=>r.active))startPlayback();   // met implies play (startPlayback starts the ticking)
+  else if(isPlay||isRec)startMet();                           // joining a running session: tick in sync
+}
+metBtn.onclick=toggleMet;
+metRowTog.onclick=toggleMet;
+metRowVol.oninput=()=>{metVol=Math.min(1,Math.max(0,(+metRowVol.value||0)/100));saveQuantPrefs();};
+recordBtn.onclick=()=>isRec?stopRecording():startRecording();
+playBtn.onclick=()=>isPlay?stopPlayback():startPlayback();
+stopBtn.onclick=()=>{isRec&&stopRecording(false);isPlay&&stopPlayback();};
+recToggle.onclick=()=>{recordingsPanel.classList.toggle('visible');arrow.textContent=recordingsPanel.classList.contains('visible')?'▲':'▼';};
+
+/* ==== POINTER EVENTS ==== */
+function down(e){e.preventDefault();
+  if(e.type==='mousedown'){startNote('mouse',e.clientX,e.clientY);
+    if(instrument!=='drums'){document.addEventListener('mousemove',move);document.addEventListener('mouseup',up);}}
+  else[...e.changedTouches].forEach(t=>startNote(t.identifier,t.clientX,t.clientY));}
+function move(e){e.preventDefault();
+  if(e.type==='mousemove')moveNote('mouse',e.clientX,e.clientY);
+  else[...e.changedTouches].forEach(t=>moveNote(t.identifier,t.clientX,t.clientY));}
+function up(e){
+  if(e.type==='mouseup'){endNote('mouse');document.removeEventListener('mousemove',move);document.removeEventListener('mouseup',up);}
+  else[...e.changedTouches].forEach(t=>endNote(t.identifier));}
+pad.addEventListener('mousedown',down);
+pad.addEventListener('touchstart',down,{passive:false});
+pad.addEventListener('touchmove',move,{passive:false});
+pad.addEventListener('touchend',up);pad.addEventListener('touchcancel',up);
+pad.addEventListener('contextmenu',e=>e.preventDefault());
+/* release notes if the pointer leaves the page or the window loses focus — otherwise they drone forever */
+document.addEventListener('mouseleave',()=>{if(touches.has('mouse')){synthEnd('mouse');
+  document.removeEventListener('mousemove',move);document.removeEventListener('mouseup',up);}});
+window.addEventListener('blur',()=>[...touches.keys()].forEach(pid=>synthEnd(pid)));
+
+/* ==== INIT ==== */
+loadQuantPrefs();applyQuant();
+setLoopShape(timeSig,barsPerLoop);
+scrubSlider.value=0;syncLab();renderVoiceLib();renderPresets();syncMetUI();
+
+/* ==== EXTERNAL SAVE / LOAD API ====
+   Used by the Extras "Synth" window to save the current song (all
+   recordings + tempo) into the creature-collect save file and load it
+   back. The "song" is just the recordings array + tempo; runtime-only
+   fields (active flag, ids) are dropped on save and rebuilt on load. */
+window.SynthApp = {
+  getSong: function () {
+    return {
+      v: 1,
+      tempo: tempo,
+      scale: scaleKey,
+      root: rootSemi,
+      edo: edo,
+      scl: scl ? { name: scl.name, cents: scl.cents.slice() } : null,
+      timeSig: timeSig,
+      bars: barsPerLoop,
+      voices: voiceLib.map(function (v) { return { name: v.name, gen: Object.assign({}, v.gen) }; }),
+      recordings: recordings.map(function (r) {
+        return { name: r.name, events: r.events,
+                 gain: (typeof r.gain === 'number') ? r.gain : 1 };
+      })
+    };
+  },
+  clearAll: function () {
+    // wipes every track — the confirm lives in the extras window's top bar
+    stopPlayback();
+    if (isRec) stopRecording(false);
+    recordings = [];
+    recordingsList.innerHTML = '';
+    dropAllTrackGains();
+    updateBadge();
+    scrubSlider.value = 0;
+  },
+  loadSong: function (song) {
+    if (!song) return;
+    if (isRec) stopRecording(false);
+    if (isPlay) stopPlayback();
+    recordings = [];
+    recordingsList.innerHTML = '';
+    dropAllTrackGains();
+    if (typeof song.tempo === 'number' && song.tempo > 0) {
+      tempo = song.tempo;
+      tempoSlider.value = tempo;
+      tempoValue.textContent = tempo + ' BPM';
+    }
+    var sc = sanitizeScl(song.scl);
+    if (EDOS.includes(song.edo)) edo = song.edo; else if (song.scale && !sc) edo = 12;
+    scl = sc || null;   // legacy songs (no scl field) land back in EDO mode
+    if (typeof song.scale === 'string' && SCALES.hasOwnProperty(song.scale)) scaleKey = song.scale;
+    if (typeof song.root === 'number' && song.root >= 0 && song.root < tunN()) rootSemi = Math.floor(song.root);
+    applyQuant();
+    // loop shape the song was recorded against (legacy songs: the old 4×8)
+    var ts = (typeof song.timeSig === 'number' && song.timeSig >= 2 && song.timeSig <= 9) ? Math.round(song.timeSig) : 4;
+    var bl = LOOP_BARS.includes(song.bars) ? song.bars : 8;
+    setLoopShape(ts, bl);
+    // merge the song's saved voices into the library (existing names win)
+    if (Array.isArray(song.voices)) {
+      song.voices.forEach(function (v) {
+        if (!v || typeof v.name !== 'string') return;
+        var nm = v.name.trim().slice(0, 24);
+        if (!nm || voiceLib.length >= 64) return;
+        if (voiceLib.some(function (x) { return x.name === nm; })) return;
+        voiceLib.push({ name: nm, gen: sanitizeGen(v.gen) });
+      });
+      saveQuantPrefs(); buildVoiceOptions(); renderVoiceLib();
+    }
+    (Array.isArray(song.recordings) ? song.recordings : []).forEach(function (s) {
+      var r = {
+        id: recSeq++,
+        name: (s && s.name) ? s.name : ('Track ' + (recSeq - 1)),
+        events: (s && Array.isArray(s.events)) ? s.events : [],
+        active: true,  // loaded tracks arrive unmuted — the toggle no longer auto-plays
+        gain: (s && typeof s.gain === 'number' && s.gain >= 0 && s.gain <= 1) ? s.gain : 1
+      };
+      recordings.push(r);
+      addRow(r);
+    });
+    updateBadge();
+  }
+};
+});
+</script>
+</body>
+</html>
