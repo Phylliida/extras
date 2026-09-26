@@ -100,15 +100,14 @@
 <body>
   <div class="wb-bar">
     <h1>✨ Extras</h1>
-    <a class="wb-home" href="https://www.phylliida.dev/">← phylliida.dev</a>
+    <a class="wb-home" id="wbHome" href="/">← Home</a>
     <button id="extrasBtn" type="button">✨ Extras</button>
   </div>
   <div class="wb-hint">
-    Little tools and toys, lifted out of
-    <a href="https://github.com/Phylliida/self-hosted-creature-collect">self-hosted-creature-collect</a>
-    so they work in any browser. Everything you make here (flashcards, drawings,
-    songs, todos, …) stays in this browser's local storage. Tip: each tool has
-    its own link — <code>#sudoku</code>, <code>#tuner</code>, <code>#pixelart</code>, …
+    Little tools and toys, all running in your browser. Everything you make
+    here (flashcards, drawings, songs, todos, …) stays in this browser's
+    local storage. Tip: each tool has its own link —
+    <code>#sudoku</code>, <code>#tuner</code>, <code>#pixelart</code>, …
   </div>
 
   <script src="extras.js"></script>
@@ -138,6 +137,20 @@
     }
     window.addEventListener('resize', syncTop);
     syncTop();
+
+    // The "← Home" link defaults to the host's root (so it works on any
+    // host, including a local server), but if we arrived here from
+    // another page on a phylliida host or this same origin, go back there
+    // instead — e.g. the homepage section the tool was opened from.
+    var home = document.getElementById('wbHome');
+    if (home && document.referrer) {
+      try {
+        var ref = new URL(document.referrer);
+        if (ref.origin === location.origin || /(^|\.)phylliida\.dev$/.test(ref.hostname)) {
+          home.href = document.referrer;
+        }
+      } catch (e) { /* keep default href */ }
+    }
 
     function openGrid() {
       var btn = document.getElementById('extrasBtn');
