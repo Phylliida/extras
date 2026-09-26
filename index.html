@@ -7,8 +7,8 @@
 <link rel="icon" href="icon.png">
 <!--
   Extras — standalone home of the Extras mini-apps from
-  self-hosted-creature-collect (anki flashcards, draw, synth, fractals,
-  todos, …), served at https://www.phylliida.dev/extras/.
+  self-hosted-creature-collect (draw, synth, fractals, todos, …), served
+  at https://www.phylliida.dev/extras/.
 
   All state lives in this browser (localStorage / IndexedDB under cc.*
   keys and the extras stores) — there is no server savefile here, so the
@@ -73,7 +73,7 @@
   }
 
   /* Top bar — permanently visible: it's fixed above EVERYTHING (the
-     extras sheet at z-31, the fractals/anki windows at z-60, the
+     extras sheet at z-31, the fractals windows at z-60, the
      synth/draw/pixel .exapp-win windows at z-1200), and every one of
      those fullscreen overlays is pushed down below it via --wb-top.
      --wb-top tracks the bar's real height (it wraps on narrow screens)
@@ -120,7 +120,6 @@
   <script src="extras-tuner.js"></script>
   <script src="extras-scapes.js"></script>
   <script src="extras-todos.js"></script>
-  <script src="extras-anki.js"></script>
   <script>
   (function () {
     'use strict';

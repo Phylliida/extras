@@ -1,19 +1,18 @@
-// Extras → Quiver / Synth: full-screen bundled mini-apps with named saves.
+// Extras → Synth / Draw / Pixel Art: full-screen bundled mini-apps with named
+// saves.
 //
 // Self-contained: this whole feature lives in this one file. It plugs into the
 // Extras launcher via the generic global.ExtrasRegisterTool({ ..., open }) hook
 // in extras.js (full-screen tools open their own window instead of an inline
 // sheet view — same idea as the Fractals window).
 //
-// Each app runs in an <iframe> (same-origin /static/*.html, so the parent can
+// Each app runs in an <iframe> (same-origin *.html, so the parent can
 // read/write its state directly). Saving:
 //   - Synth: window.SynthApp.getSong()/loadSong() inside synth.html.
-//   - Quiver: the full state lives in the page's URL hash, so we save the hash
-//     and reload the iframe to it (no quiver-internal hooks needed).
-// Saved songs/quivers live in their own IndexedDB (too big for localStorage)
-// and are exposed via window.ExtrasSongs / window.ExtrasQuivers so index.html's
-// backup export/import carries them inside the creature-collect save file —
-// exactly like saved fractals.
+//   - Draw / Pixel Art: window.DrawApp / window.PixelApp bridges.
+// Saved songs/drawings live in their own IndexedDB (too big for localStorage)
+// and are exposed via window.ExtrasSongs etc. so a host page's backup
+// export/import can carry them — exactly like saved fractals.
 
 (function (global) {
   'use strict';
@@ -22,7 +21,6 @@
   global._scriptVersions = global._scriptVersions || {};
   global._scriptVersions['extras-apps.js'] = SCRIPT_VERSION;
 
-  const QUIVER_SRC = 'quiver.html';
   const SYNTH_SRC = 'synth.html';
   const DRAW_SRC = 'draw/index.html';
   const PIXELART_SRC = 'pixelart/index.html';
@@ -37,7 +35,7 @@
     + '</svg>';
 
   // Draw bubble icon: a pencil drawing a stroke. Inline SVG, currentColor
-  // so it matches the theme/text (same approach as the Quiver icon below).
+  // so it matches the theme/text (same approach as the Pixel Art icon above).
   const DRAW_ICON =
     '<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" style="display:block">'
     + '<g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
@@ -55,28 +53,15 @@
   // overflowing on narrow phones once the Save / Save New split is added.
   const ICON_FOLDER = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7 a1 1 0 0 1 1-1 h5 l2 2 h8 a1 1 0 0 1 1 1 v8 a1 1 0 0 1 -1 1 H4 a1 1 0 0 1 -1 -1 Z"/></svg>';
 
-  // Quiver bubble icon: three nodes in a triangle with directed arrows
-  // left -> top and top -> right. Inline SVG; uses currentColor to match the
-  // theme/text. Arrowheads are stroked chevrons (no markers) for WebKit safety.
-  const QUIVER_ICON =
-    '<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" style="display:block">'
-    + '<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">'
-    + '<line x1="6.5" y1="15.2" x2="10.6" y2="7.6"/>'
-    + '<path d="M7.94 9.38 L10.6 7.6 L10.58 10.8"/>'
-    + '<line x1="13.4" y1="7.6" x2="17.6" y2="15.4"/>'
-    + '<path d="M17.58 12.2 L17.6 15.4 L14.94 13.62"/>'
-    + '</g>'
-    + '<circle cx="12" cy="5" r="2.4" fill="currentColor"/>'
-    + '<circle cx="5" cy="18" r="2.4" fill="currentColor"/>'
-    + '<circle cx="19" cy="18" r="2.4" fill="currentColor"/>'
-    + '</svg>';
-
   // ────────────────────────────────────────────────────────────
-  // IndexedDB store (songs + quivers)
+  // IndexedDB store (songs + drawings + pixel art)
   // ────────────────────────────────────────────────────────────
   const DB_NAME = 'cc-extras-apps-v1';
   const DB_VER = 4;
-  // 'state' holds single-record current-state autosaves (e.g. the live quiver).
+  // 'state' holds single-record current-state autosaves (apps that pass
+  // cfg.autosaveKey). 'quivers' is kept for IndexedDB schema compatibility
+  // (the Quiver extra was removed; dropping a store would need a DB version
+  // bump).
   // 'drawings' holds named saves from the Draw app (added v3).
   // 'pixelart' holds named saves from the Pixel Art app (added v4).
   const STORE_NAMES = ['songs', 'quivers', 'state', 'drawings', 'pixelart'];
@@ -142,12 +127,10 @@
   }
 
   const songsStore = makeStore('songs');
-  const quiversStore = makeStore('quivers');
   const drawingsStore = makeStore('drawings');
   const pixelartStore = makeStore('pixelart');
-  // Exposed for index.html's backup export/import (mirrors window.ExtrasFractals).
+  // Exposed for a host page's backup export/import (mirrors window.ExtrasFractals).
   global.ExtrasSongs = songsStore;
-  global.ExtrasQuivers = quiversStore;
   global.ExtrasDrawings = drawingsStore;
   global.ExtrasPixelArt = pixelartStore;
 
@@ -348,8 +331,8 @@
       if (!loaded) {
         loaded = true;
         if (cfg.autosaveKey) {
-          // Restore the last current-state (e.g. quiver + mutation graph) so
-          // closing/reopening the app returns to where you left off.
+          // Restore the last current-state so closing/reopening the app
+          // returns to where you left off.
           idbGet('state', cfg.autosaveKey)
             .then((rec) => { frame.src = cfg.src + ((rec && rec.hash) ? rec.hash : ''); })
             .catch(() => { frame.src = cfg.src; });
@@ -436,8 +419,8 @@
     wireActions(cfg.trailActions, 'trail');
 
     // ── Autosave current state (so reopening restores the same view) ──
-    // Used by the quiver window (cfg.autosaveKey). The full state lives in the
-    // page hash; freeze=true also pins the mutation graph node positions.
+    // Only active for apps that pass cfg.autosaveKey. The full state lives in
+    // the page hash; freeze=true also pins any volatile UI positions.
     let autosaveTimer = null;
     function autosave(freeze) {
       if (!cfg.autosaveKey || !loaded) return;
@@ -583,21 +566,7 @@
     if (win && win.SynthApp && typeof win.SynthApp.loadSong === 'function') win.SynthApp.loadSong(data);
   }
 
-  // Quiver: full state lives in the page's URL hash. Capture the current hash;
-  // load by reloading the iframe to that hash (quiver reads it on init).
-  function captureQuiver(win) {
-    if (!win) return null;
-    // Freeze + serialize the mutation graph into the hash before reading it, so
-    // saved quivers carry their mutation graph too.
-    try { if (typeof win.ensureMutationGraphFrozen === 'function') win.ensureMutationGraphFrozen(); } catch (e) {}
-    try { if (typeof win.triggerURLUpdate === 'function') win.triggerURLUpdate(); } catch (e) {}
-    let hash = '';
-    try { hash = win.location.hash || ''; } catch (e) { return null; }
-    let thumb = null;
-    try { if (win.QuiverApp && win.QuiverApp.thumbnail) thumb = win.QuiverApp.thumbnail(); } catch (e) {}
-    return { hash: hash, thumb: thumb };
-  }
-  // Draw: state via window.DrawApp inside static/draw/index.html. getDrawing
+  // Draw: state via window.DrawApp inside draw/index.html. getDrawing
   // returns {doc, camera}; we add a small JPEG preview for the folder grid.
   function captureDraw(win) {
     if (!win || !win.DrawApp || typeof win.DrawApp.getDrawing !== 'function') return null;
@@ -634,45 +603,15 @@
     }
   }
 
-  function applyQuiver(frameEl, win, data) {
-    const hash = (data && data.hash) ? data.hash : '';
-    // Prefer setting the hash on the live iframe — quiver's onhashchange runs
-    // loadGraphFromHash(), which restores the quiver AND its mutation graph.
-    // If the hash is unchanged, force a reload so it still re-applies.
-    if (win) {
-      try {
-        if ((win.location.hash || '') === hash) {
-          frameEl.src = QUIVER_SRC + '?t=' + Date.now() + hash;
-        } else {
-          win.location.hash = hash;
-        }
-        return;
-      } catch (e) { /* cross-window issue — fall through to a full reload */ }
-    }
-    frameEl.src = QUIVER_SRC + hash;
-  }
-
   // ────────────────────────────────────────────────────────────
   // Register with the Extras launcher (retry until the hook exists)
   // ────────────────────────────────────────────────────────────
-  let quiverWin = null;
   let synthWin = null;
   let drawWin = null;
   let pixelWin = null;
 
   function register() {
     if (!global.ExtrasRegisterTool) { setTimeout(register, 50); return; }
-    global.ExtrasRegisterTool({
-      id: 'quiver', name: 'Quiver', label: 'Quiver', icon: QUIVER_ICON,
-      open: () => {
-        if (!quiverWin) quiverWin = makeAppWindow({
-          title: 'Quiver', noun: 'quiver', nounPlural: 'quivers',
-          src: QUIVER_SRC, store: quiversStore, capture: captureQuiver, apply: applyQuiver,
-          autosaveKey: 'quiver-current',
-        });
-        quiverWin.open();
-      },
-    });
     global.ExtrasRegisterTool({
       id: 'synth', name: 'Synth', label: 'Synth', icon: '&#127929;', // 🎹
       open: () => {
