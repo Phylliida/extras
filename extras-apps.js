@@ -12,7 +12,7 @@
 //   - Draw / Pixel Art: window.DrawApp / window.PixelApp bridges.
 // Saved songs/drawings live in their own IndexedDB (too big for localStorage)
 // and are exposed via window.ExtrasSongs etc. so a host page's backup
-// export/import can carry them — exactly like saved fractals.
+// export/import can carry them.
 
 (function (global) {
   'use strict';

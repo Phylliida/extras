@@ -7,7 +7,7 @@
 <link rel="icon" href="icon.png">
 <!--
   Extras — standalone home of the Extras mini-apps from
-  self-hosted-creature-collect (draw, synth, fractals, todos, …), served
+  self-hosted-creature-collect (draw, synth, todos, …), served
   at https://www.phylliida.dev/extras/.
 
   All state lives in this browser (localStorage / IndexedDB under cc.*
@@ -73,9 +73,9 @@
   }
 
   /* Top bar — permanently visible: it's fixed above EVERYTHING (the
-     extras sheet at z-31, the fractals windows at z-60, the
-     synth/draw/pixel .exapp-win windows at z-1200), and every one of
-     those fullscreen overlays is pushed down below it via --wb-top.
+     extras sheet at z-31, the synth/draw/pixel .exapp-win windows at
+     z-1200), and every one of those fullscreen overlays is pushed down
+     below it via --wb-top.
      --wb-top tracks the bar's real height (it wraps on narrow screens)
      from a ResizeObserver in the boot script below. */
   :root { --wb-top: 56px; }
@@ -100,7 +100,7 @@
 <body>
   <div class="wb-bar">
     <h1>✨ Extras</h1>
-    <a class="wb-home" id="wbHome" href="/extras/">← Extras</a>
+    <a class="wb-home" id="wbHome" href="/">← Home</a>
     <button id="extrasBtn" type="button">✨ Extras</button>
   </div>
   <div class="wb-hint">
@@ -113,7 +113,6 @@
   <script src="extras.js"></script>
   <script src="extras-apps.js"></script>
   <script src="extras-almanac.js"></script>
-  <script src="extras-vibration.js"></script>
   <script src="extras-skymap.js"></script>
   <script src="extras-sudoku.js"></script>
   <script src="extras-sensors.js"></script>
@@ -137,8 +136,20 @@
     window.addEventListener('resize', syncTop);
     syncTop();
 
-    // The "← Extras" link always returns to the extras main page (/extras/),
-    // dropping any #tool hash, rather than leaving for the site homepage.
+    // The bar's back link is context-sensitive: on the main grid (no
+    // #tool hash) it leaves for the site homepage; inside a specific
+    // extra it just returns to the extras grid (drops the hash).
+    var home = document.getElementById('wbHome');
+    function syncHome() {
+      if (!home) return;
+      if (hashId()) {
+        home.href = location.pathname;
+        home.textContent = '← Extras';
+      } else {
+        home.href = '/';
+        home.textContent = '← Home';
+      }
+    }
 
     function openGrid() {
       var btn = document.getElementById('extrasBtn');
@@ -166,6 +177,7 @@
       var b = e.target.closest && e.target.closest('.extras-bubble');
       if (b && b.dataset.extra && hashId() !== b.dataset.extra) {
         history.replaceState(null, '', '#' + b.dataset.extra);
+        syncHome();
       }
     });
     // Closing the sheet (X, backdrop, or its own back-to-grid) drops the hash.
@@ -173,6 +185,7 @@
       var panel = document.getElementById('extrasPanel');
       if (panel && !panel.classList.contains('show') && location.hash) {
         history.replaceState(null, '', location.pathname);
+        syncHome();
       }
     });
     function watchPanel() {
@@ -183,13 +196,14 @@
     function boot() {
       watchPanel();
       route();
+      syncHome();
     }
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', boot);
     } else {
       boot();
     }
-    window.addEventListener('hashchange', route);
+    window.addEventListener('hashchange', () => { route(); syncHome(); });
   })();
   </script>
 </body>
